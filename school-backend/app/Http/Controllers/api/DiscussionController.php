@@ -1,0 +1,62 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Discussion;
+use App\Models\Student;
+use App\Models\Teacher;
+use Illuminate\Http\Request;
+
+class DiscussionController extends Controller
+{
+    public function index(Request $request)
+    {
+        $query = Discussion::whereNull('parent_id')
+            ->with(['student', 'teacher', 'replies.student', 'replies.teacher']);
+
+        if ($request->filled('meet_id')) {
+            $query->where('meet_id', $request->meet_id);
+        }
+
+        $discussions = $query->orderBy('created_at', 'asc')->get();
+
+        return response()->json($discussions);
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'meet_id'   => 'required|exists:meets,id',
+            'parent_id' => 'nullable|exists:discussions,id',
+            'message'   => 'required|string',
+        ]);
+
+        $user = $request->user();
+        $student = Student::where('email', $user->email)->first();
+        $teacher = Teacher::where('email', $user->email)->first();
+
+        $discussion = Discussion::create([
+            'meet_id'    => $validated['meet_id'],
+            'parent_id'  => $validated['parent_id'] ?? null,
+            'student_id' => $student ? $student->id : null,
+            'teacher_id' => $teacher ? $teacher->id : null,
+            'message'    => $validated['message'],
+        ]);
+
+        return response()->json([
+            'message' => 'Pesan diskusi berhasil dikirim',
+            'data'    => $discussion->load(['student', 'teacher'])
+        ], 201);
+    }
+
+    public function destroy($id)
+    {
+        $discussion = Discussion::findOrFail($id);
+        $discussion->delete();
+
+        return response()->json([
+            'message' => 'Pesan diskusi berhasil dihapus'
+        ]);
+    }
+}

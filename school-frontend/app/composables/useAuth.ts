@@ -1,5 +1,4 @@
 export const useAuth = () => {
-  // Tambahkan opsi path dan sameSite agar cookie tersimpan presisi di seluruh route
   const token = useCookie<string | null>('auth_token', { 
     maxAge: 60 * 60 * 24 * 7, // 7 Hari
     path: '/',
@@ -12,16 +11,40 @@ export const useAuth = () => {
   const config = useRuntimeConfig()
   const apiBase = config.public.apiBase || 'http://localhost:8000/api'
 
+  // Helper Get User Role Name
+  const getUserRole = () => {
+    if (!user.value) return ''
+    if (typeof user.value.role === 'object' && user.value.role !== null) {
+      return (user.value.role.name || '').toLowerCase()
+    }
+    if (typeof user.value.role === 'string') {
+      return user.value.role.toLowerCase()
+    }
+    if (user.value.role_id === 1) return 'admin'
+    if (user.value.role_id === 2) return 'teacher'
+    if (user.value.role_id === 3) return 'student'
+    return ''
+  }
+
   // Helper Cek Role
   const hasRole = (allowedRoles: string | string[]) => {
     if (!user.value) return false
     const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles]
-    
-    const userRoleName = typeof user.value.role === 'object' 
-      ? user.value.role?.name 
-      : user.value.role
+    const currentRole = getUserRole()
+    return roles.map(r => r.toLowerCase()).includes(currentRole)
+  }
 
-    return roles.includes(userRoleName)
+  // Helper Dapatkan Halaman Utama Berdasarkan Role
+  const getRoleHome = () => {
+    const role = getUserRole()
+    if (role === 'admin' || role === 'super_admin') {
+      return '/admin/dashboard'
+    } else if (role === 'teacher' || role === 'guru') {
+      return '/teacher/dashboard'
+    } else if (role === 'student' || role === 'siswa') {
+      return '/student/dashboard'
+    }
+    return '/elearning'
   }
 
   const fetchUser = async () => {
@@ -33,9 +56,11 @@ export const useAuth = () => {
           Accept: 'application/json'
         }
       })
+      return user.value
     } catch {
       token.value = null
       user.value = null
+      return null
     }
   }
 
@@ -48,11 +73,11 @@ export const useAuth = () => {
         body: credentials
       })
 
-      // Ambil token & user dari respon
       token.value = res.token || res.access_token
       user.value = res.user || null
 
-      return navigateTo('/admin/dashboard')
+      const targetPath = getRoleHome()
+      return navigateTo(targetPath)
     } finally {
       isLoading.value = false
     }
@@ -70,7 +95,8 @@ export const useAuth = () => {
       token.value = res.token || res.access_token
       user.value = res.user || null
 
-      return navigateTo('/admin/dashboard')
+      const targetPath = getRoleHome()
+      return navigateTo(targetPath)
     } finally {
       isLoading.value = false
     }
@@ -88,5 +114,5 @@ export const useAuth = () => {
     return navigateTo('/login')
   }
 
-  return { token, user, isLoading, fetchUser, login, register, logout, hasRole }
+  return { token, user, isLoading, fetchUser, login, register, logout, hasRole, getUserRole, getRoleHome }
 }

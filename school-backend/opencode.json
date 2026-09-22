@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "agentrouter": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "AgentRouter",
+      "options": {
+        "baseURL": "https://co.agentrouter.org/v1",
+        "apiKey": "sk-jz68sTYwyeHZU1hxTfvL7XoXsVFqmU4yAw9phldCsrddclku"
+      },
+      "models": {
+        "gpt-6-astra": {
+          "name": "GPT-6 Astra"
+        }
+      }
+    }
+  },
+  "model": "agentrouter/gpt-6-astra"
+}

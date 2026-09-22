@@ -2,7 +2,8 @@
 import { ref } from 'vue'
 
 definePageMeta({
-  layout: 'admin'
+  layout: 'admin',
+  middleware: ['auth']
 })
 
 // Data Dummy Statistik
