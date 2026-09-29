@@ -33,8 +33,13 @@ class DiscussionController extends Controller
         ]);
 
         $user = $request->user();
-        $student = Student::where('email', $user->email)->first();
-        $teacher = Teacher::where('email', $user->email)->first();
+        $student = null;
+        $teacher = null;
+
+        if ($user) {
+            $student = Student::where('nis', $user->username)->orWhere('email', $user->email)->first();
+            $teacher = Teacher::where('nip', $user->username)->orWhere('email', $user->email)->first();
+        }
 
         $discussion = Discussion::create([
             'meet_id'    => $validated['meet_id'],

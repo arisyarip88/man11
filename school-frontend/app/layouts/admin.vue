@@ -24,9 +24,9 @@ onUnmounted(() => {
 // Menu Utama Single (Tanpa Dashboard karena ditaruh terpisah di paling atas)
 const menuItems = [
   { 
-    label: 'Class', 
+    label: 'Rombel Kelas', 
     icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0h4m-4 0V11m0 0h4m-4 0H7m4 0v10', 
-    to: '/admin/classes', 
+    to: '/admin/rombel', 
     roles: ['admin', 'super_admin', 'manager'] 
   },
   // { 

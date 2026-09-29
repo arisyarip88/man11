@@ -11,14 +11,43 @@ const config = useRuntimeConfig()
 const apiBase = config.public.apiBase || 'http://localhost:8000/api'
 const storageBase = config.public.storageBase || 'http://localhost:8000/storage'
 const token = useCookie('auth_token')
-const { getUserRole } = useAuth()
+const { user, getUserRole } = useAuth()
 const canManageLearning = computed(() => ['admin', 'super_admin', 'teacher', 'guru'].includes(getUserRole()))
 
-const activeTab = ref('materials') // 'materials', 'quizzes', 'discussions'
+const activeTab = ref(route.query.tab === 'attendance' ? 'attendance' : 'materials') // 'materials', 'quizzes', 'discussions', 'attendance'
 const meet = ref(null)
 const quizzes = ref([])
 const discussions = ref([])
 const loading = ref(true)
+
+// Presensi Siswa State (Phase 3 & 7)
+const checkingIn = ref(false)
+const handleCheckIn = async (status = 'H', notes = '') => {
+  checkingIn.value = true
+  try {
+    const res = await $fetch(`${apiBase}/meets/${route.params.id}/attendances/check-in`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token.value}` },
+      body: { status, notes: notes || (status === 'H' ? 'Presensi Mandiri Siswa' : 'Izin Siswa Mandiri') }
+    })
+    if (meet.value) {
+      meet.value.my_attendance = res.data
+    }
+    await fetchAttendances()
+    alert('Presensi berhasil dicatat!')
+  } catch (err) {
+    alert(err?.data?.message || 'Gagal melakukan presensi.')
+  } finally {
+    checkingIn.value = false
+  }
+}
+
+const attendances = ref([])
+const attendanceStats = ref({ total: 0, H: 0, S: 0, I: 0, A: 0 })
+const attendanceLoading = ref(false)
+const attendanceSaving = ref(false)
+const attendanceSearch = ref('')
+const attendanceSuccessMsg = ref('')
 
 // Modals
 const showMaterialModal = ref(false)
@@ -44,6 +73,12 @@ const quizForm = reactive({
   due_date: '',
   max_score: 100
 })
+
+const quizMode = ref('manual') // 'manual' | 'bank'
+const questionBanks = ref([])
+const selectedBankId = ref('')
+const quizDuration = ref(60)
+const isSyncingQuiz = ref(false)
 
 const submitForm = reactive({
   submission_text: '',
@@ -94,10 +129,96 @@ const fetchDiscussions = async () => {
   }
 }
 
+const fetchAttendances = async () => {
+  attendanceLoading.value = true
+  try {
+    const res = await $fetch(`${apiBase}/meets/${route.params.id}/attendances`, {
+      headers: { Authorization: `Bearer ${token.value}` }
+    })
+    if (res?.data) {
+      attendances.value = res.data.attendances || []
+      attendanceStats.value = res.data.stats || { total: 0, H: 0, S: 0, I: 0, A: 0 }
+    }
+  } catch (err) {
+    console.error('Fetch attendances error:', err)
+  } finally {
+    attendanceLoading.value = false
+  }
+}
+
+const markAllPresent = () => {
+  attendances.value.forEach(item => {
+    item.status = 'H'
+  })
+  recalcAttendanceStats()
+}
+
+const setAttendanceStatus = (item, status) => {
+  item.status = status
+  recalcAttendanceStats()
+}
+
+const recalcAttendanceStats = () => {
+  const stats = { total: attendances.value.length, H: 0, S: 0, I: 0, A: 0 }
+  attendances.value.forEach(item => {
+    if (stats[item.status] !== undefined) stats[item.status]++
+  })
+  attendanceStats.value = stats
+}
+
+const saveAttendances = async () => {
+  attendanceSaving.value = true
+  attendanceSuccessMsg.value = ''
+  try {
+    const payload = {
+      attendances: attendances.value.map(item => ({
+        student_id: item.student_id,
+        status: item.status,
+        notes: item.notes || null
+      }))
+    }
+    const res = await $fetch(`${apiBase}/meets/${route.params.id}/attendances/batch`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token.value}` },
+      body: payload
+    })
+    if (res?.data?.stats) {
+      attendanceStats.value = { ...attendanceStats.value, ...res.data.stats }
+    }
+    attendanceSuccessMsg.value = 'Presensi siswa berhasil disimpan!'
+    setTimeout(() => {
+      attendanceSuccessMsg.value = ''
+    }, 4000)
+  } catch (err) {
+    alert(err?.data?.message || 'Gagal menyimpan presensi pertemuan.')
+  } finally {
+    attendanceSaving.value = false
+  }
+}
+
+const filteredAttendances = computed(() => {
+  if (!attendanceSearch.value.trim()) return attendances.value
+  const q = attendanceSearch.value.toLowerCase()
+  return attendances.value.filter(a =>
+    (a.name && a.name.toLowerCase().includes(q)) ||
+    (a.nisn && a.nisn.toLowerCase().includes(q))
+  )
+})
+
+const myAttendance = computed(() => {
+  if (meet.value?.my_attendance) {
+    return meet.value.my_attendance
+  }
+  const studentId = user.value?.student?.id
+  if (!studentId) return null
+  return attendances.value.find(a => a.student_id === studentId) || null
+})
+
 onMounted(async () => {
   await fetchMeetDetail()
   await fetchQuizzes()
   await fetchDiscussions()
+  await fetchAttendances()
 })
 
 const handleMaterialFileChange = (e) => {
@@ -113,9 +234,24 @@ const openAddMaterialModal = () => {
   showMaterialModal.value = true
 }
 
-const openAddQuizModal = () => {
+const openAddQuizModal = async () => {
+  quizMode.value = 'manual'
+  selectedBankId.value = ''
+  quizDuration.value = 60
   Object.assign(quizForm, { title: '', instructions: '', quiz_type: 'assignment', due_date: '', max_score: 100 })
   showQuizModal.value = true
+
+  // Fetch question banks if empty
+  if (questionBanks.value.length === 0) {
+    try {
+      const res = await $fetch(`${apiBase}/question-banks?paginate=false`, {
+        headers: { Authorization: `Bearer ${token.value}` }
+      })
+      questionBanks.value = res.data || (Array.isArray(res) ? res : [])
+    } catch (e) {
+      console.error('Gagal mengambil bank soal:', e)
+    }
+  }
 }
 
 const openSubmitModal = (quiz) => {
@@ -153,16 +289,40 @@ const handleSaveMaterial = async () => {
 }
 
 const handleSaveQuiz = async () => {
+  isSyncingQuiz.value = true
   try {
-    await $fetch(`${apiBase}/quizzes`, {
+    const isCbt = quizMode.value === 'bank'
+    const payload = {
+      ...quizForm,
+      meet_id: route.params.id,
+      quiz_type: isCbt ? 'multiple_choice' : quizForm.quiz_type,
+      duration_minutes: isCbt ? quizDuration.value : null
+    }
+
+    const res = await $fetch(`${apiBase}/quizzes`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token.value}` },
-      body: { ...quizForm, meet_id: route.params.id }
+      body: payload
     })
+
+    const createdQuizId = res.data?.id || res.id
+
+    // Jika mode bank soal, langsung jalankan sinkronisasi butir soal
+    if (isCbt && selectedBankId.value && createdQuizId) {
+      await $fetch(`${apiBase}/quizzes/${createdQuizId}/import-bank-items`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token.value}` },
+        body: { question_bank_id: selectedBankId.value }
+      })
+    }
+
     showQuizModal.value = false
     await fetchQuizzes()
+    alert(isCbt ? 'Ujian CBT dari Bank Soal berhasil disinkronkan ke pertemuan!' : 'Tugas mandiri berhasil dibuat!')
   } catch (err) {
-    alert(err.data?.message || 'Gagal menyimpan kuis.')
+    alert(err.data?.message || 'Gagal menyimpan kuis / tugas.')
+  } finally {
+    isSyncingQuiz.value = false
   }
 }
 
@@ -284,7 +444,7 @@ const getEmbedYoutubeUrl = (url) => {
           </p>
 
           <!-- Tab Selector Header -->
-          <div class="flex gap-2 pt-6 border-t border-slate-100 mt-6">
+          <div class="flex flex-wrap gap-2 pt-6 border-t border-slate-100 mt-6">
             <button 
               @click="activeTab = 'materials'"
               class="px-4 py-2 rounded-xl font-bold text-xs transition"
@@ -305,6 +465,16 @@ const getEmbedYoutubeUrl = (url) => {
               :class="activeTab === 'discussions' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
             >
               💬 Forum Diskusi ({{ discussions.length }})
+            </button>
+            <button 
+              @click="activeTab = 'attendance'"
+              class="px-4 py-2 rounded-xl font-bold text-xs transition flex items-center gap-1.5"
+              :class="activeTab === 'attendance' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+            >
+              📋 Presensi Kehadiran
+              <span class="rounded-full px-1.5 py-0.5 text-[10px]" :class="activeTab === 'attendance' ? 'bg-white/20 text-white font-bold' : 'bg-emerald-100 text-emerald-800 font-bold'">
+                {{ attendanceStats.total || attendances.length }}
+              </span>
             </button>
           </div>
         </div>
@@ -358,17 +528,55 @@ const getEmbedYoutubeUrl = (url) => {
 
           <div v-else class="space-y-4">
             <div v-for="q in quizzes" :key="q.id" class="bg-white p-6 rounded-2xl border border-slate-100 shadow-xs space-y-4">
-              <div class="flex justify-between items-start">
+              <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                 <div>
-                  <span class="px-2.5 py-1 bg-amber-100 text-amber-800 text-[10px] font-bold uppercase rounded-lg">
-                    {{ q.quiz_type }}
-                  </span>
-                  <h4 class="text-lg font-bold text-slate-900 mt-1">{{ q.title }}</h4>
+                  <div class="flex items-center gap-2">
+                    <span 
+                      class="px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg"
+                      :class="q.quiz_type === 'multiple_choice' ? 'bg-purple-100 text-purple-800' : 'bg-amber-100 text-amber-800'"
+                    >
+                      {{ q.quiz_type === 'multiple_choice' ? 'Ujian CBT (Bank Soal)' : (q.quiz_type || 'Tugas') }}
+                    </span>
+                    <span v-if="q.duration_minutes" class="text-[11px] text-slate-500 font-semibold">
+                      ⏱ {{ q.duration_minutes }} Menit
+                    </span>
+                  </div>
+                  <h4 class="text-lg font-bold text-slate-900 mt-1.5">{{ q.title }}</h4>
                   <p class="text-xs text-slate-500 mt-1">Batas Pengumpulan: <span class="font-semibold text-rose-600">{{ q.due_date }}</span> • Max Nilai: {{ q.max_score }}</p>
                 </div>
-                <button @click="openSubmitModal(q)" class="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 transition">
-                  Kumpulkan Tugas
-                </button>
+
+                <!-- Action Button Depending on Role & Quiz Type -->
+                <div class="flex items-center gap-2">
+                  <!-- Siswa: CBT Exam -->
+                  <NuxtLink 
+                    v-if="!canManageLearning && q.quiz_type === 'multiple_choice'" 
+                    :to="`/student/quizzes/${q.id}/exam`"
+                    class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                  >
+                    <span>Mulai Ujian CBT</span>
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                  </NuxtLink>
+
+                  <!-- Siswa: Regular Assignment Submit -->
+                  <button 
+                    v-else-if="!canManageLearning"
+                    @click="openSubmitModal(q)" 
+                    class="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 transition"
+                  >
+                    Kumpulkan Tugas
+                  </button>
+
+                  <!-- Guru: Grading & Koreksi CBT -->
+                  <NuxtLink 
+                    v-if="canManageLearning && q.quiz_type === 'multiple_choice'" 
+                    :to="`/teacher/quizzes/${q.id}/grading`"
+                    class="px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition"
+                  >
+                    Koreksi & Nilai CBT 📊
+                  </NuxtLink>
+                </div>
               </div>
 
               <p class="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
@@ -446,6 +654,247 @@ const getEmbedYoutubeUrl = (url) => {
             </div>
           </div>
         </div>
+
+        <!-- TAB 4: PRESENSI KEHADIRAN SISWA (PHASE 3) -->
+        <div v-else-if="activeTab === 'attendance'" class="space-y-6">
+          <!-- Student Banner (If logged in as student) -->
+          <div v-if="!canManageLearning" class="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs">
+            <div v-if="myAttendance && myAttendance.status" class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <p class="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Status Presensi Anda</p>
+                <h4 class="text-lg font-extrabold text-slate-900 mt-0.5">{{ user?.name || user?.username }}</h4>
+                <p v-if="myAttendance.notes" class="text-xs text-slate-500 mt-1">Catatan: {{ myAttendance.notes }}</p>
+                <p v-if="myAttendance.recorded_at" class="text-[10px] text-slate-400 mt-0.5">Tercatat: {{ myAttendance.recorded_at }}</p>
+              </div>
+              <div>
+                <span
+                  class="px-4 py-2 rounded-xl text-xs font-black inline-block shadow-xs"
+                  :class="{
+                    'bg-emerald-600 text-white': myAttendance.status === 'H',
+                    'bg-amber-500 text-white': myAttendance.status === 'S',
+                    'bg-sky-500 text-white': myAttendance.status === 'I',
+                    'bg-rose-500 text-white': myAttendance.status === 'A'
+                  }"
+                >
+                  {{ myAttendance.status === 'H' ? '✓ HADIR' : myAttendance.status === 'S' ? '✢ SAKIT' : myAttendance.status === 'I' ? 'ℹ IZIN' : '✕ ALPA / TANPA KETERANGAN' }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Jika Siswa Belum Presensi -->
+            <div v-else class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <p class="text-[11px] font-bold text-amber-600 uppercase tracking-wider">Presensi Kehadiran Siswa</p>
+                <h4 class="text-lg font-extrabold text-slate-900 mt-0.5">Anda belum melakukan presensi</h4>
+                <p class="text-xs text-slate-500 mt-1">Silakan konfirmasi kehadiran Anda pada sesi pertemuan ini.</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  @click="handleCheckIn('H')"
+                  :disabled="checkingIn"
+                  class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <span>✓ Hadir Sekarang</span>
+                </button>
+                <button
+                  @click="handleCheckIn('I', 'Izin Mandiri Siswa')"
+                  :disabled="checkingIn"
+                  class="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-xl transition disabled:opacity-50"
+                >
+                  <span>ℹ Izin</span>
+                </button>
+                <button
+                  @click="handleCheckIn('S', 'Izin Sakit Siswa')"
+                  :disabled="checkingIn"
+                  class="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold rounded-xl transition disabled:opacity-50"
+                >
+                  <span>✢ Sakit</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Stats Grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Siswa</span>
+              <p class="text-2xl font-black text-slate-900 mt-1">{{ attendanceStats.total }}</p>
+            </div>
+            <div class="bg-emerald-50/80 rounded-2xl p-4 border border-emerald-100/80 shadow-xs">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Hadir (H)</span>
+              <p class="text-2xl font-black text-emerald-700 mt-1">{{ attendanceStats.H }}</p>
+            </div>
+            <div class="bg-amber-50/80 rounded-2xl p-4 border border-amber-100/80 shadow-xs">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Sakit (S)</span>
+              <p class="text-2xl font-black text-amber-700 mt-1">{{ attendanceStats.S }}</p>
+            </div>
+            <div class="bg-sky-50/80 rounded-2xl p-4 border border-sky-100/80 shadow-xs">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-sky-700">Izin (I)</span>
+              <p class="text-2xl font-black text-sky-700 mt-1">{{ attendanceStats.I }}</p>
+            </div>
+            <div class="bg-rose-50/80 rounded-2xl p-4 border border-rose-100/80 shadow-xs col-span-2 sm:col-span-1">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-rose-700">Alpa (A)</span>
+              <p class="text-2xl font-black text-rose-700 mt-1">{{ attendanceStats.A }}</p>
+            </div>
+          </div>
+
+          <!-- Action & Filter Bar (Guru / Admin) -->
+          <div v-if="canManageLearning" class="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div class="relative flex-1 max-w-md">
+              <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                v-model="attendanceSearch"
+                type="text"
+                placeholder="Cari nama atau NISN siswa..."
+                class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              />
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                @click="markAllPresent"
+                type="button"
+                class="px-3.5 py-2 bg-emerald-50 text-emerald-800 border border-emerald-200/80 hover:bg-emerald-100 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+              >
+                <svg class="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Tandai Semua Hadir
+              </button>
+              <button
+                @click="saveAttendances"
+                :disabled="attendanceSaving"
+                type="button"
+                class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg v-if="attendanceSaving" class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+                <span>{{ attendanceSaving ? 'Menyimpan...' : 'Simpan Presensi' }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Alert Success -->
+          <div v-if="attendanceSuccessMsg" class="rounded-2xl bg-emerald-50 border border-emerald-200 p-3.5 text-xs font-bold text-emerald-800 flex items-center gap-2">
+            <svg class="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            {{ attendanceSuccessMsg }}
+          </div>
+
+          <!-- Attendance Table -->
+          <div class="bg-white rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
+            <div v-if="attendanceLoading" class="p-12 text-center text-slate-400 text-xs">
+              Memuat data presensi rombel...
+            </div>
+            <div v-else-if="filteredAttendances.length === 0" class="p-12 text-center text-slate-400 text-xs">
+              Tidak ada data siswa pada kelas ini.
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wider text-[11px]">
+                    <th class="py-3.5 px-4 font-bold text-center w-12">No</th>
+                    <th class="py-3.5 px-4 font-bold w-36">NISN</th>
+                    <th class="py-3.5 px-4 font-bold">Nama Lengkap Siswa</th>
+                    <th class="py-3.5 px-4 font-bold text-center w-60">Status Kehadiran</th>
+                    <th class="py-3.5 px-4 font-bold w-64">Keterangan / Catatan</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr v-for="(student, idx) in filteredAttendances" :key="student.student_id" class="hover:bg-slate-50/70 transition">
+                    <td class="py-3 px-4 text-center font-bold text-slate-400">{{ idx + 1 }}</td>
+                    <td class="py-3 px-4 font-mono text-slate-500">{{ student.nisn || '-' }}</td>
+                    <td class="py-3 px-4 font-bold text-slate-900">{{ student.name }}</td>
+                    <td class="py-3 px-4">
+                      <!-- Status Pills (H / S / I / A) -->
+                      <div v-if="canManageLearning" class="flex items-center justify-center gap-1.5 bg-slate-100/80 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          @click="setAttendanceStatus(student, 'H')"
+                          class="px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition"
+                          :class="student.status === 'H' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:bg-white'"
+                          title="Hadir"
+                        >
+                          H
+                        </button>
+                        <button
+                          type="button"
+                          @click="setAttendanceStatus(student, 'S')"
+                          class="px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition"
+                          :class="student.status === 'S' ? 'bg-amber-500 text-white shadow-xs' : 'text-slate-600 hover:bg-white'"
+                          title="Sakit"
+                        >
+                          S
+                        </button>
+                        <button
+                          type="button"
+                          @click="setAttendanceStatus(student, 'I')"
+                          class="px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition"
+                          :class="student.status === 'I' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-600 hover:bg-white'"
+                          title="Izin"
+                        >
+                          I
+                        </button>
+                        <button
+                          type="button"
+                          @click="setAttendanceStatus(student, 'A')"
+                          class="px-2.5 py-1 rounded-lg font-extrabold text-[11px] transition"
+                          :class="student.status === 'A' ? 'bg-rose-500 text-white shadow-xs' : 'text-slate-600 hover:bg-white'"
+                          title="Alpa"
+                        >
+                          A
+                        </button>
+                      </div>
+                      <div v-else class="text-center font-bold">
+                        <span
+                          class="px-2.5 py-1 rounded-lg text-[10px]"
+                          :class="{
+                            'bg-emerald-100 text-emerald-800': student.status === 'H',
+                            'bg-amber-100 text-amber-800': student.status === 'S',
+                            'bg-sky-100 text-sky-800': student.status === 'I',
+                            'bg-rose-100 text-rose-800': student.status === 'A'
+                          }"
+                        >
+                          {{ student.status === 'H' ? 'Hadir' : student.status === 'S' ? 'Sakit' : student.status === 'I' ? 'Izin' : 'Alpa' }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="py-3 px-4">
+                      <input
+                        v-if="canManageLearning"
+                        v-model="student.notes"
+                        type="text"
+                        placeholder="Misal: Sakit flu, izin lomba..."
+                        class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      />
+                      <span v-else class="text-slate-500">{{ student.notes || '-' }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Footer Save Bar -->
+            <div v-if="canManageLearning && filteredAttendances.length > 0" class="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span class="text-slate-500">
+                Menampilkan <b>{{ filteredAttendances.length }}</b> dari total <b>{{ attendances.length }}</b> siswa
+              </span>
+              <button
+                @click="saveAttendances"
+                :disabled="attendanceSaving"
+                type="button"
+                class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <span>{{ attendanceSaving ? 'Menyimpan...' : 'Simpan Presensi Pertemuan' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </template>
     </div>
 
@@ -470,22 +919,128 @@ const getEmbedYoutubeUrl = (url) => {
       </div>
     </div>
 
-    <!-- MODAL FORM QUIZ -->
+    <!-- MODAL FORM QUIZ & CBT SYNC -->
     <div v-if="canManageLearning && showQuizModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
-        <h3 class="text-lg font-bold text-slate-900">Buat Tugas / Kuis Baru</h3>
-        <form @submit.prevent="handleSaveQuiz" class="space-y-3 text-xs">
-          <input v-model="quizForm.title" type="text" placeholder="Judul Tugas / Kuis" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" required>
-          <select v-model="quizForm.quiz_type" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-            <option value="assignment">Tugas Mandiri</option>
-            <option value="quiz">Kuis Harian</option>
-            <option value="exam">Ujian</option>
-          </select>
-          <input v-model="quizForm.due_date" type="datetime-local" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" required>
-          <textarea v-model="quizForm.instructions" placeholder="Instruksi pengerjaan..." class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" rows="3"></textarea>
-          <div class="flex justify-end gap-2 pt-2">
-            <button type="button" @click="showQuizModal = false" class="px-4 py-2 border rounded-xl">Batal</button>
-            <button type="submit" class="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl">Simpan Tugas</button>
+      <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center pb-2 border-b border-slate-100">
+          <h3 class="text-lg font-bold text-slate-900">Buat Tugas / Ujian CBT Baru</h3>
+          <button @click="showQuizModal = false" class="text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+
+        <!-- Mode Toggle -->
+        <div class="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+          <button 
+            type="button" 
+            @click="quizMode = 'manual'"
+            class="py-2 rounded-lg transition"
+            :class="quizMode === 'manual' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500 hover:text-slate-800'"
+          >
+            📁 Penugasan Manual
+          </button>
+          <button 
+            type="button" 
+            @click="quizMode = 'bank'"
+            class="py-2 rounded-lg transition"
+            :class="quizMode === 'bank' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-500 hover:text-purple-600'"
+          >
+            ⚡ Ambil dari Bank Soal (CBT)
+          </button>
+        </div>
+
+        <form @submit.prevent="handleSaveQuiz" class="space-y-3.5 text-xs">
+          <!-- Title -->
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Judul Tugas / Ujian</label>
+            <input v-model="quizForm.title" type="text" placeholder="Misal: Penilaian Harian Bab 1 / Tugas Mandiri" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none" required>
+          </div>
+
+          <!-- If Bank Soal Selected -->
+          <div v-if="quizMode === 'bank'" class="p-4 bg-purple-50/70 border border-purple-100 rounded-xl space-y-3">
+            <div>
+              <label class="block font-bold text-purple-900 mb-1">Pilih Bank Soal Guru</label>
+              <select 
+                v-model="selectedBankId" 
+                class="w-full p-2.5 bg-white border border-purple-200 rounded-xl text-purple-950 font-medium focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                required
+              >
+                <option value="" disabled>-- Pilih Bank Soal yang Tersedia --</option>
+                <option v-for="b in questionBanks" :key="b.id" :value="b.id">
+                  {{ b.title }} ({{ b.grade_level ? 'Kelas ' + b.grade_level : '' }} • {{ b.items_count || (b.items ? b.items.length : 0) }} Butir Soal)
+                </option>
+              </select>
+              <p v-if="questionBanks.length === 0" class="text-[11px] text-amber-600 mt-1">
+                Belum ada Bank Soal. Buat di menu Bank Soal terlebih dahulu.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block font-bold text-purple-900 mb-1">Durasi Pengerjaan (Menit)</label>
+                <input 
+                  v-model.number="quizDuration" 
+                  type="number" 
+                  min="5" 
+                  max="180" 
+                  class="w-full p-2.5 bg-white border border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:outline-none" 
+                  required
+                >
+              </div>
+              <div>
+                <label class="block font-bold text-purple-900 mb-1">Skor Maksimal</label>
+                <input 
+                  v-model.number="quizForm.max_score" 
+                  type="number" 
+                  min="1" 
+                  class="w-full p-2.5 bg-white border border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:outline-none" 
+                  required
+                >
+              </div>
+            </div>
+          </div>
+
+          <!-- If Manual Selected -->
+          <div v-if="quizMode === 'manual'" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">Tipe Penugasan</label>
+              <select v-model="quizForm.quiz_type" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
+                <option value="assignment">Tugas Mandiri</option>
+                <option value="quiz">Kuis Pertemuan</option>
+                <option value="exam">Ujian Tertulis</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-semibold text-slate-700 mb-1">Skor Maksimal</label>
+              <input v-model.number="quizForm.max_score" type="number" min="1" max="100" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" required>
+            </div>
+          </div>
+
+          <!-- Due Date -->
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Batas Waktu Pengumpulan (Deadline)</label>
+            <input v-model="quizForm.due_date" type="datetime-local" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" required>
+          </div>
+
+          <!-- Instructions -->
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Petunjuk & Instruksi Pengerjaan</label>
+            <textarea v-model="quizForm.instructions" placeholder="Petunjuk khusus bagi siswa saat mengerjakan..." class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl" rows="3"></textarea>
+          </div>
+
+          <!-- Buttons -->
+          <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <button type="button" @click="showQuizModal = false" class="px-4 py-2 border rounded-xl text-slate-600 hover:bg-slate-50">Batal</button>
+            <button 
+              type="submit" 
+              :disabled="isSyncingQuiz || (quizMode === 'bank' && !selectedBankId)"
+              class="px-5 py-2 text-white font-bold rounded-xl transition flex items-center gap-1.5 disabled:opacity-50"
+              :class="quizMode === 'bank' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-emerald-600 hover:bg-emerald-700'"
+            >
+              <svg v-if="isSyncingQuiz" class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              <span>{{ isSyncingQuiz ? 'Menyinkronkan...' : (quizMode === 'bank' ? 'Sinkronkan CBT' : 'Simpan Tugas') }}</span>
+            </button>
           </div>
         </form>
       </div>

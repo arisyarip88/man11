@@ -38,4 +38,19 @@ class Student extends Model
     {
         return $this->belongsTo(User::class, 'nis', 'username');
     }
+
+    public function classes()
+    {
+        return $this->belongsToMany(ClassModel::class, 'class_student', 'student_id', 'class_id')->withTimestamps();
+    }
+
+    public function submissions()
+    {
+        return $this->hasMany(QuizSubmission::class, 'student_id');
+    }
+
+    public function grades()
+    {
+        return $this->hasMany(StudentGrade::class, 'student_id');
+    }
 }

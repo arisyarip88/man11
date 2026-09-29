@@ -16,14 +16,22 @@ const handleLogin = async () => {
   errorMessage.value = ''
 
   try {
-    // Memanggil fungsi login dari composable (mengirim payload email & password)
+    // Memanggil fungsi login dari composable (mengirim payload login & password)
     await login({
-      email: email.value,
+      login: email.value.trim(),
+      email: email.value.trim(),
+      username: email.value.trim(),
       password: password.value
     })
   } catch (err) {
     console.error('Login error:', err)
-    errorMessage.value = err.data?.message || err.message || 'Email atau password salah.'
+    if (err.data?.message) {
+      errorMessage.value = err.data.message
+    } else if (err.message && err.message.includes('Failed to fetch')) {
+      errorMessage.value = 'Gagal terhubung ke server backend (localhost:8000). Pastikan server backend sedang aktif.'
+    } else {
+      errorMessage.value = err.message || 'Email atau password salah.'
+    }
   }
 }
 </script>
@@ -51,12 +59,12 @@ const handleLogin = async () => {
       <!-- Form Login -->
       <form @submit.prevent="handleLogin" class="space-y-4">
         <div>
-          <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Email</label>
+          <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Email / Username / NIP</label>
           <input 
             v-model="email"
-            type="email" 
+            type="text" 
             required
-            placeholder="nama@email.com" 
+            placeholder="NIP / Username / Email" 
             class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
           />
         </div>

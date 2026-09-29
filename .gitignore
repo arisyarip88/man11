@@ -1,0 +1,27 @@
+# Planning & Temporary Design Artifacts
+plans/
+LMS_IMPLEMENTATION_PHASE.md
+school-backend/qa_runner.cjs
+
+# Kilo and Agent workspaces
+.kilo/
+.agents/
+.claude/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log

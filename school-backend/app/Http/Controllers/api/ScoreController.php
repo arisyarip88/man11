@@ -54,7 +54,14 @@ class ScoreController extends Controller
 
     public function studentScores(Request $request, $id)
     {
-        $student = Student::with(['classes.className', 'submissions.quiz.meet.course.subject'])->findOrFail($id);
+        if ($id === 'me' || empty($id)) {
+            $user = $request->user();
+            $student = $user?->student ?: Student::where('email', $user?->email)->firstOrFail();
+        } else {
+            $student = Student::findOrFail($id);
+        }
+
+        $student->load(['classes.className', 'submissions.quiz.meet.course.subject']);
 
         $gradedSubmissions = $student->submissions->where('status', 'graded');
         $avgScore = $gradedSubmissions->count() > 0 ? round($gradedSubmissions->avg('score'), 2) : 0;

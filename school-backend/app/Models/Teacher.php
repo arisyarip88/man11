@@ -40,4 +40,14 @@ class Teacher extends Model
     {
         return $this->belongsTo(User::class, 'nip', 'username');
     }
+
+    public function homeroomClasses()
+    {
+        return $this->hasMany(ClassModel::class, 'homeroom_teacher_id');
+    }
+
+    public function courses()
+    {
+        return $this->hasMany(Course::class, 'teacher_id');
+    }
 }

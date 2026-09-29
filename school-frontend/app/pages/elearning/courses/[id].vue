@@ -222,12 +222,18 @@ const handleDeleteMeet = async (id) => {
               </div>
             </div>
 
-            <div class="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-0 pt-3 md:pt-0 border-slate-100">
+            <div class="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end border-t md:border-0 pt-3 md:pt-0 border-slate-100">
+              <NuxtLink 
+                :to="`/elearning/meets/${meet.id}?tab=attendance`"
+                class="px-3.5 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+              >
+                📋 Presensi
+              </NuxtLink>
               <NuxtLink 
                 :to="`/elearning/meets/${meet.id}`"
                 class="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition"
               >
-                Buka Sesi Belajar →
+                Buka Sesi →
               </NuxtLink>
               <button v-if="canManageLearning"
                 @click="handleDeleteMeet(meet.id)"

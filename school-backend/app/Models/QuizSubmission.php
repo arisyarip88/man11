@@ -9,7 +9,31 @@ class QuizSubmission extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['quiz_id', 'student_id', 'submission_text', 'file_path', 'submitted_at', 'score', 'teacher_feedback', 'status'];
+    protected $fillable = [
+        'quiz_id',
+        'student_id',
+        'started_at',
+        'submission_text',
+        'answers',
+        'file_path',
+        'submitted_at',
+        'score',
+        'score_pg',
+        'score_essay',
+        'is_graded',
+        'teacher_feedback',
+        'status',
+    ];
+
+    protected $casts = [
+        'answers'      => 'array',
+        'is_graded'    => 'boolean',
+        'started_at'   => 'datetime',
+        'submitted_at' => 'datetime',
+        'score'        => 'decimal:2',
+        'score_pg'     => 'decimal:2',
+        'score_essay'  => 'decimal:2',
+    ];
 
     public function quiz()
     {

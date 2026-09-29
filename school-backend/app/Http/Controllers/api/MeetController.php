@@ -17,6 +17,10 @@ class MeetController extends Controller
             $query->where('course_id', $request->course_id);
         }
 
+        if ($request->boolean('with_details')) {
+            $query->with(['materials', 'quizzes']);
+        }
+
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -58,18 +62,46 @@ class MeetController extends Controller
 
     public function show($id)
     {
+        $user = request()->user();
+        $studentId = null;
+        if ($user && in_array(strtolower($user->role?->name ?? ''), ['student', 'siswa'])) {
+            $student = \App\Models\Student::where('nis', $user->username)->orWhere('email', $user->email)->first();
+            $studentId = $student?->id;
+        }
+
         $meet = Meet::with([
             'course.subject', 
             'course.class.className', 
             'course.teacher', 
             'materials', 
-            'quizzes.submissions',
+            'quizzes.submissions' => function ($sq) use ($studentId) {
+                if ($studentId) {
+                    $sq->where('student_id', $studentId);
+                }
+            },
             'discussions' => function ($q) {
-                $q->whereNull('parent_id')->with(['replies', 'student', 'teacher']);
+                $q->whereNull('parent_id')->with(['replies.student', 'replies.teacher', 'student', 'teacher']);
             }
         ])->findOrFail($id);
 
-        return response()->json($meet);
+        $myAttendance = null;
+        if ($studentId) {
+            $attRecord = \App\Models\MeetAttendance::where('meet_id', $id)
+                ->where('student_id', $studentId)
+                ->first();
+            $labels = ['H' => 'Hadir', 'S' => 'Sakit', 'I' => 'Izin', 'A' => 'Alpa'];
+            $myAttendance = [
+                'status'       => $attRecord ? $attRecord->status : null,
+                'status_label' => $attRecord ? ($labels[$attRecord->status] ?? $attRecord->status) : 'Belum Presensi',
+                'notes'        => $attRecord?->notes,
+                'recorded_at'  => $attRecord?->updated_at,
+            ];
+        }
+
+        $meetArray = $meet->toArray();
+        $meetArray['my_attendance'] = $myAttendance;
+
+        return response()->json($meetArray);
     }
 
     public function update(Request $request, $id)

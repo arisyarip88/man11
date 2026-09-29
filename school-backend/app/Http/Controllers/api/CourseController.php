@@ -21,15 +21,15 @@ class CourseController extends Controller
         if ($request->filled('my_courses') && $user) {
             $userRole = $user->role ? strtolower($user->role->name) : '';
 
-            if ($userRole === 'teacher') {
-                $teacher = Teacher::where('email', $user->email)->first();
+            if (in_array($userRole, ['teacher', 'guru'])) {
+                $teacher = Teacher::where('nip', $user->username)->orWhere('email', $user->email)->first();
                 if ($teacher) {
                     $query->where('teacher_id', $teacher->id);
                 } else {
                     return response()->json([]);
                 }
-            } elseif ($userRole === 'student') {
-                $student = Student::where('email', $user->email)->first();
+            } elseif (in_array($userRole, ['student', 'siswa'])) {
+                $student = Student::where('nis', $user->username)->orWhere('email', $user->email)->first();
                 if ($student) {
                     $classIds = $student->classes()->pluck('classes.id')->toArray();
                     $query->whereIn('class_id', $classIds);

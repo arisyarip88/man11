@@ -38,8 +38,13 @@ class User extends Authenticatable
         return $this->hasOne(Student::class, 'nis', 'username');
     }
 
-    public function Teacher()
+    public function teacher()
     {
         return $this->hasOne(Teacher::class, 'nip', 'username');
+    }
+
+    public function isAdmin()
+    {
+        return in_array(strtolower($this->role?->name ?? ''), ['admin', 'super_admin']);
     }
 }

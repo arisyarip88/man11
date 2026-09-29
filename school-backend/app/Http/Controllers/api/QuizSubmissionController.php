@@ -18,7 +18,7 @@ class QuizSubmissionController extends Controller
         // Siswa hanya boleh melihat status pengumpulan miliknya sendiri.
         $role = strtolower($request->user()?->role?->name ?? '');
         if (($role === 'student' || $request->boolean('my_submissions')) && $request->user()) {
-            $student = Student::where('email', $request->user()->email)->first();
+            $student = Student::where('nis', $request->user()->username)->orWhere('email', $request->user()->email)->first();
             if ($student) {
                 $query->where('student_id', $student->id);
             } else {
@@ -40,7 +40,7 @@ class QuizSubmissionController extends Controller
     public function submit(Request $request)
     {
         $user = $request->user();
-        $student = Student::where('email', $user->email)->first();
+        $student = $user ? Student::where('nis', $user->username)->orWhere('email', $user->email)->first() : null;
 
         if (!$student && !$request->filled('student_id')) {
             return response()->json([
