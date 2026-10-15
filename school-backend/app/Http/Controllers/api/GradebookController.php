@@ -62,20 +62,25 @@ class GradebookController extends Controller
             $sumatifSum = 0;
             $sumatifCount = 0;
 
+            $evaluatedWeight = 0;
             foreach ($components as $comp) {
-                $val = isset($studentGrades[$comp->id]) ? (float) $studentGrades[$comp->id]['score'] : 0.0;
-                $weightedSum += ($val * (float) $comp->weight);
+                if (isset($studentGrades[$comp->id]) && $studentGrades[$comp->id]['score'] > 0) {
+                    $val = (float) $studentGrades[$comp->id]['score'];
+                    $weightedSum += ($val * (float) $comp->weight);
+                    $evaluatedWeight += (float) $comp->weight;
 
-                if ($comp->type === 'formatif') {
-                    $formatifSum += $val;
-                    $formatifCount++;
-                } else {
-                    $sumatifSum += $val;
-                    $sumatifCount++;
+                    if ($comp->type === 'formatif') {
+                        $formatifSum += $val;
+                        $formatifCount++;
+                    } else {
+                        $sumatifSum += $val;
+                        $sumatifCount++;
+                    }
                 }
             }
 
-            $finalScore = $totalWeight > 0 ? round($weightedSum / $totalWeight, 2) : 0;
+            $divisor = $evaluatedWeight > 0 ? $evaluatedWeight : $totalWeight;
+            $finalScore = $divisor > 0 ? round($weightedSum / $divisor, 2) : 0;
             $avgFormatif = $formatifCount > 0 ? round($formatifSum / $formatifCount, 2) : 0;
             $avgSumatif = $sumatifCount > 0 ? round($sumatifSum / $sumatifCount, 2) : 0;
 

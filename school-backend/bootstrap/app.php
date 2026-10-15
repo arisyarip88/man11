@@ -13,10 +13,24 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->api(append: [
+            \App\Http\Middleware\UpdateSessionActivity::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, Request $request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                $hasBearer = (bool) $request->bearerToken();
+                return response()->json([
+                    'message' => $hasBearer 
+                        ? 'Sesi Anda telah berakhir atau akun telah aktif di perangkat lain.' 
+                        : 'Unauthenticated.',
+                    'error_code' => $hasBearer ? 'session_replaced' : 'unauthenticated',
+                ], 401);
+            }
+        });
     })->create();

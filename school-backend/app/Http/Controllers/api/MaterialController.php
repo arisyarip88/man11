@@ -53,7 +53,14 @@ class MaterialController extends Controller
 
     public function show($id)
     {
-        $material = Material::with('meet')->findOrFail($id);
+        $material = Material::with([
+            'meet.course.subject',
+            'meet.course.class.className',
+            'meet.course.teacher',
+            'meet.materials',
+            'meet.quizzes',
+            'meet.discussions'
+        ])->findOrFail($id);
         return response()->json($material);
     }
 
@@ -97,7 +104,14 @@ class MaterialController extends Controller
         $material = Material::findOrFail($id);
 
         if ($material->file_path && Storage::disk('public')->exists($material->file_path)) {
-            Storage::disk('public')->delete($material->file_path);
+            // A3: Hanya hapus file fisik jika tidak ada Material lain yang mereferensikannya
+            $otherReferences = Material::where('id', '!=', $material->id)
+                ->where('file_path', $material->file_path)
+                ->exists();
+
+            if (! $otherReferences) {
+                Storage::disk('public')->delete($material->file_path);
+            }
         }
 
         $material->delete();

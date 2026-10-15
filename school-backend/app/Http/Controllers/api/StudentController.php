@@ -48,8 +48,16 @@ class StudentController extends Controller
             'birth_place' => 'nullable|string|max:255',
             'address'     => 'nullable|string',
             'picture'     => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
-            'is_active'      => 'required|in:active,graduated,transferred',
+            'is_active'   => 'nullable|in:active,graduated,transferred',
+            'status'      => 'nullable|in:active,graduated,transferred',
         ]);
+
+        if (empty($validated['is_active']) && empty($validated['status'])) {
+            $validated['status'] = 'active';
+        } else {
+            $validated['status'] = $validated['status'] ?? $validated['is_active'];
+        }
+        unset($validated['is_active']);
 
         if ($request->hasFile('picture')) {
             $validated['picture'] = $request->file('picture')->store('students', 'public');
@@ -86,8 +94,14 @@ class StudentController extends Controller
             'birth_place' => 'nullable|string|max:255',
             'address'     => 'nullable|string',
             'picture'     => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
-            'is_active'      => 'required|in:active,graduated,transferred',
+            'is_active'   => 'nullable|in:active,graduated,transferred',
+            'status'      => 'nullable|in:active,graduated,transferred',
         ]);
+
+        if (isset($validated['status']) || isset($validated['is_active'])) {
+            $validated['status'] = $validated['status'] ?? $validated['is_active'];
+        }
+        unset($validated['is_active']);
 
         if ($request->hasFile('picture')) {
             if ($student->picture && Storage::disk('public')->exists($student->picture)) {
@@ -117,6 +131,26 @@ class StudentController extends Controller
 
         return response()->json([
             'message' => 'Data siswa berhasil dihapus'
+        ]);
+    }
+
+    /**
+     * A4 / A7: Reset sesi perangkat siswa
+     */
+    public function resetSession($id)
+    {
+        $student = Student::findOrFail($id);
+        $user = \App\Models\User::where('username', $student->nis)
+            ->orWhere('email', $student->email)
+            ->first();
+
+        if ($user) {
+            $user->tokens()->delete();
+            \App\Models\UserSession::where('user_id', $user->id)->update(['is_active' => false]);
+        }
+
+        return response()->json([
+            'message' => "Sesi perangkat untuk siswa {$student->name} berhasil direset."
         ]);
     }
 }

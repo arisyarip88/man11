@@ -57,6 +57,30 @@ class ScheduleController extends Controller
             });
         }
 
+        if ($request->boolean('with_current_meet')) {
+            $items = ($request->get('paginate') === 'false' || $request->get('all') === 'true')
+                ? $query->orderBy('start_time', 'asc')->get()
+                : $query->orderBy('start_time', 'asc')->paginate(20);
+
+            $targetCollection = ($items instanceof \Illuminate\Pagination\LengthAwarePaginator)
+                ? $items->getCollection()
+                : $items;
+
+            $targetCollection->transform(function ($item) {
+                if ($item->course_id) {
+                    $resolved = self::resolveCurrentMeetForCourse($item->course_id);
+                    $item->current_meet = $resolved['meet'];
+                    $item->current_meet_status = $resolved['status'];
+                } else {
+                    $item->current_meet = null;
+                    $item->current_meet_status = 'none';
+                }
+                return $item;
+            });
+
+            return response()->json($items);
+        }
+
         if ($request->get('paginate') === 'false' || $request->get('all') === 'true') {
             return response()->json($query->orderBy('start_time', 'asc')->get());
         }
@@ -119,6 +143,84 @@ class ScheduleController extends Controller
 
         return response()->json([
             'message' => 'Jadwal pelajaran berhasil dihapus'
+        ]);
+    }
+
+    public static function resolveCurrentMeetForCourse($courseId)
+    {
+        if (!$courseId) {
+            return ['status' => 'none', 'meet' => null];
+        }
+
+        $todayStart = now()->startOfDay();
+        $todayEnd = now()->endOfDay();
+
+        // 1. Coba cari pertemuan yang start_time-nya hari ini
+        $todayMeet = \App\Models\Meet::with(['chapter'])
+            ->where('course_id', $courseId)
+            ->whereBetween('start_time', [$todayStart, $todayEnd])
+            ->orderBy('meeting_number', 'asc')
+            ->first();
+
+        if ($todayMeet) {
+            return ['status' => 'today', 'meet' => $todayMeet];
+        }
+
+        // 2. Jika tidak ada pertemuan hari ini, cari pertemuan mendatang (start_time >= hari ini)
+        $upcomingMeet = \App\Models\Meet::with(['chapter'])
+            ->where('course_id', $courseId)
+            ->where('start_time', '>=', $todayStart)
+            ->orderBy('start_time', 'asc')
+            ->first();
+
+        if ($upcomingMeet) {
+            return ['status' => 'upcoming', 'meet' => $upcomingMeet];
+        }
+
+        // 3. Fallback: ambil pertemuan pertama yang belum lewat atau pertemuan pertama urutan meeting_number
+        $fallbackMeet = \App\Models\Meet::with(['chapter'])
+            ->where('course_id', $courseId)
+            ->orderBy('meeting_number', 'asc')
+            ->first();
+
+        return [
+            'status' => $fallbackMeet ? 'fallback' : 'none',
+            'meet'   => $fallbackMeet,
+        ];
+    }
+
+    /**
+     * A4: Mengambil pertemuan aktif untuk jadwal tertentu
+     * (pertemuan yang start_time-nya hari ini, jika tidak ada ambil pertemuan berikutnya atau fallback).
+     */
+    public function currentMeet($id)
+    {
+        $schedule = Schedule::with(['course.subject', 'course.class.className', 'course.teacher'])->findOrFail($id);
+        $course = $schedule->course;
+
+        if (! $course) {
+            return response()->json([
+                'message'  => 'Kursus tidak ditemukan untuk jadwal ini.',
+                'status'   => 'none',
+                'data'     => null,
+                'schedule' => $schedule,
+            ], 404);
+        }
+
+        $result = self::resolveCurrentMeetForCourse($course->id);
+
+        $messages = [
+            'today'    => 'Pertemuan hari ini ditemukan',
+            'upcoming' => 'Pertemuan mendatang ditemukan',
+            'fallback' => 'Pertemuan kelas ditemukan',
+            'none'     => 'Belum ada pertemuan diatur untuk kelas ini',
+        ];
+
+        return response()->json([
+            'status'   => $result['status'],
+            'message'  => $messages[$result['status']] ?? 'Pertemuan ditemukan',
+            'data'     => $result['meet'],
+            'schedule' => $schedule,
         ]);
     }
 }

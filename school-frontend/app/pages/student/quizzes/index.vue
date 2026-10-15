@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import BackButton from '~/components/ui/BackButton.vue'
+import AppButton from '~/components/ui/AppButton.vue'
+import AppBadge from '~/components/ui/AppBadge.vue'
+import AppCard from '~/components/ui/AppCard.vue'
+import AppSkeleton from '~/components/ui/AppSkeleton.vue'
+import AppEmptyState from '~/components/ui/AppEmptyState.vue'
 
 definePageMeta({ layout: 'student', middleware: 'auth' })
 
@@ -14,6 +20,8 @@ interface QuizItem {
   instructions?: string
   quiz_type: string
   due_date: string
+  available_from?: string
+  available_until?: string
   max_score: number
   duration_minutes?: number
   meet?: {
@@ -43,6 +51,51 @@ const quizzes = ref<QuizItem[]>([])
 const submissions = ref<SubmissionItem[]>([])
 const activeTab = ref<'active' | 'history'>('active')
 const search = ref('')
+
+const getQuizStatus = (q: any) => {
+  const now = new Date()
+  const from = q.available_from ? new Date(q.available_from) : null
+  const until = q.available_until ? new Date(q.available_until) : (q.due_date ? new Date(q.due_date) : null)
+
+  const formatShort = (d: Date) => {
+    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) + ' ' + 
+      d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+  }
+
+  if (until && !isNaN(until.getTime()) && now > until) {
+    return {
+      canStart: false,
+      status: 'expired',
+      label: `Sesi Berakhir (${formatShort(until)})`,
+      buttonText: 'Sesi Ujian Ditutup'
+    }
+  }
+
+  if (from && !isNaN(from.getTime()) && now < from) {
+    return {
+      canStart: false,
+      status: 'scheduled',
+      label: `Dibuka ${formatShort(from)}`,
+      buttonText: 'Ujian Belum Dibuka'
+    }
+  }
+
+  if (until && !isNaN(until.getTime())) {
+    return {
+      canStart: true,
+      status: 'active',
+      label: `Batas: ${formatShort(until)}`,
+      buttonText: 'Mulai Ujian CBT'
+    }
+  }
+
+  return {
+    canStart: true,
+    status: 'open',
+    label: 'Akses Terbuka',
+    buttonText: 'Mulai Ujian CBT'
+  }
+}
 
 const api = async <T>(path: string) => {
   return await $fetch<T>(`${apiBase}${path}`, {
@@ -79,12 +132,10 @@ const submittedQuizMap = computed(() => {
   return map
 })
 
-// Unsubmitted / Active Quizzes
 const activeQuizzes = computed(() => {
   return quizzes.value.filter(q => !submittedQuizMap.value[q.id])
 })
 
-// Submitted Quizzes (History)
 const historyQuizzes = computed(() => {
   return submissions.value.map(s => {
     const quizDetail = quizzes.value.find(q => q.id === s.quiz_id) || s.quiz
@@ -122,48 +173,45 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6">
-    <!-- Top Back Link -->
-    <NuxtLink to="/student/dashboard" class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-emerald-700 transition">
-      <span>←</span>
-      <span>Kembali ke Dashboard Belajar Siswa</span>
-    </NuxtLink>
+    <!-- Top Navigation -->
+    <div>
+      <BackButton fallback="/student/dashboard" label="Kembali ke Dashboard Siswa" />
+    </div>
 
     <!-- Header Page -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-5">
       <div>
         <div class="flex items-center gap-2">
-          <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800">
-            CBT & Penugasan
-          </span>
-          <span class="text-xs text-slate-400">Computer Based Test Siswa</span>
+          <AppBadge variant="brand" size="xs">CBT & Penugasan</AppBadge>
+          <span class="text-xs text-slate-500 font-medium">Computer Based Test</span>
         </div>
-        <h1 class="text-2xl font-bold text-slate-800 mt-1">Ujian & Tugas Belajar</h1>
+        <h1 class="text-2xl font-black tracking-tight text-slate-900 mt-1">Ujian & Evaluasi Belajar</h1>
         <p class="text-xs text-slate-500 mt-1">
-          Ikuti sesi ujian CBT online dan pantau seluruh riwayat nilai hasil evaluasi Anda.
+          Ikuti sesi ujian CBT online dan pantau riwayat hasil evaluasi akademik Anda.
         </p>
       </div>
 
       <!-- Tab Switcher -->
-      <div class="flex items-center gap-1.5 bg-white p-1 rounded-2xl border border-slate-100 shadow-xs text-xs font-bold">
+      <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/70 text-xs font-semibold">
         <button
           type="button"
           @click="activeTab = 'active'"
-          class="px-4 py-2 rounded-xl transition flex items-center gap-1.5"
-          :class="activeTab === 'active' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'"
+          class="px-4 py-2 rounded-lg transition min-tap-target flex items-center gap-2"
+          :class="activeTab === 'active' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'"
         >
           <span>Ujian Aktif</span>
-          <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="activeTab === 'active' ? 'bg-purple-700 text-white' : 'bg-slate-100 text-slate-600'">
+          <span class="px-2 py-0.5 rounded-md text-[11px] font-bold" :class="activeTab === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'">
             {{ activeQuizzes.length }}
           </span>
         </button>
         <button
           type="button"
           @click="activeTab = 'history'"
-          class="px-4 py-2 rounded-xl transition flex items-center gap-1.5"
-          :class="activeTab === 'history' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'"
+          class="px-4 py-2 rounded-lg transition min-tap-target flex items-center gap-2"
+          :class="activeTab === 'history' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'"
         >
           <span>Riwayat & Nilai</span>
-          <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="activeTab === 'history' ? 'bg-purple-700 text-white' : 'bg-slate-100 text-slate-600'">
+          <span class="px-2 py-0.5 rounded-md text-[11px] font-bold" :class="activeTab === 'history' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'">
             {{ historyQuizzes.length }}
           </span>
         </button>
@@ -176,7 +224,7 @@ onMounted(() => {
         v-model="search"
         type="text"
         placeholder="Cari nama ujian atau mata pelajaran..."
-        class="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:outline-none transition shadow-xs"
+        class="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none transition shadow-xs font-medium text-slate-800 placeholder-slate-400"
       />
       <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -185,104 +233,119 @@ onMounted(() => {
 
     <!-- Loading State -->
     <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-      <div v-for="i in 3" :key="i" class="h-44 bg-white rounded-2xl border border-slate-100 p-6 animate-pulse"></div>
+      <AppSkeleton v-for="i in 3" :key="i" height="h-52" class="rounded-2xl" />
     </div>
 
     <!-- TAB 1: ACTIVE / UNCOMPLETED EXAMS -->
     <div v-else-if="activeTab === 'active'">
-      <div v-if="filteredActive.length === 0" class="bg-white rounded-3xl border border-slate-100 p-12 text-center space-y-3">
-        <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <h3 class="text-sm font-bold text-slate-800">Semua Ujian & Tugas Sudah Selesai!</h3>
-        <p class="text-xs text-slate-500 max-w-sm mx-auto">
-          Tidak ada ujian atau tugas yang perlu dikerjakan saat ini. Anda dapat memeriksa hasil nilai Anda di tab Riwayat.
-        </p>
-      </div>
+      <AppEmptyState
+        v-if="filteredActive.length === 0"
+        title="Semua Ujian & Tugas Selesai"
+        description="Tidak ada ujian atau tugas aktif yang perlu dikerjakan. Anda dapat memeriksa hasil di tab Riwayat & Nilai."
+      />
 
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        <div
+        <AppCard
           v-for="q in filteredActive"
           :key="q.id"
-          class="bg-white rounded-2xl border border-slate-100 p-6 shadow-xs hover:shadow-md hover:border-purple-200 transition flex flex-col justify-between space-y-4 group"
+          variant="interactive"
+          class="flex flex-col justify-between space-y-4"
         >
           <div class="space-y-3">
             <div class="flex items-center justify-between">
-              <span
-                class="px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg"
-                :class="q.quiz_type === 'multiple_choice' ? 'bg-purple-100 text-purple-800' : 'bg-amber-100 text-amber-800'"
-              >
+              <AppBadge :variant="q.quiz_type === 'multiple_choice' ? 'brand' : 'warning'" size="xs">
                 {{ q.quiz_type === 'multiple_choice' ? 'Ujian CBT' : 'Tugas Mandiri' }}
-              </span>
-              <span v-if="q.duration_minutes" class="text-[11px] font-mono text-purple-700 font-bold bg-purple-50 px-2 py-0.5 rounded-md">
-                ⏱ {{ q.duration_minutes }} Menit
+              </AppBadge>
+
+              <span v-if="q.duration_minutes" class="text-[11px] font-mono text-slate-700 font-bold bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 flex items-center gap-1">
+                <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {{ q.duration_minutes }} Menit
               </span>
             </div>
 
             <div>
-              <h3 class="text-base font-bold text-slate-900 group-hover:text-purple-700 transition">
+              <h3 class="text-base font-bold text-slate-900 leading-snug">
                 {{ q.title }}
               </h3>
-              <p class="text-xs text-slate-500 font-medium mt-0.5">
+              <p class="text-xs text-slate-500 font-medium mt-1">
                 {{ q.meet?.course?.subject?.name || 'Mata Pelajaran' }} · {{ q.meet?.course?.class?.className?.name || 'Kelas' }}
               </p>
             </div>
 
-            <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 line-clamp-2">
-              {{ q.instructions || 'Ikuti petunjuk ujian dengan teliti dan selesaikan sebelum batas waktu pengumpulan.' }}
+            <div class="p-3 bg-slate-50 rounded-xl border border-slate-200/60 text-xs text-slate-600 line-clamp-2">
+              {{ q.instructions || 'Ikuti petunjuk ujian dengan teliti dan selesaikan sebelum batas waktu.' }}
             </div>
 
-            <div class="pt-2 border-t border-slate-50 flex items-center justify-between text-[11px] text-slate-500">
-              <span>Batas Waktu:</span>
-              <span class="font-mono text-rose-600 font-semibold">{{ q.due_date || 'Tidak ditentukan' }}</span>
+            <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+              <span>Status Akses:</span>
+              <span
+                class="px-2 py-0.5 rounded text-[10px] font-bold"
+                :class="{
+                  'bg-rose-50 text-rose-700 border border-rose-200': getQuizStatus(q).status === 'expired',
+                  'bg-amber-50 text-amber-700 border border-amber-200': getQuizStatus(q).status === 'scheduled',
+                  'bg-emerald-50 text-emerald-700 border border-emerald-200': getQuizStatus(q).status === 'active',
+                  'bg-slate-50 text-slate-700 border border-slate-200': getQuizStatus(q).status === 'open'
+                }"
+              >
+                {{ getQuizStatus(q).label }}
+              </span>
             </div>
           </div>
 
           <div class="pt-2">
-            <NuxtLink
-              v-if="q.quiz_type === 'multiple_choice'"
-              :to="`/student/quizzes/${q.id}/exam`"
-              class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-xs transition group-hover:shadow"
+            <template v-if="q.quiz_type === 'multiple_choice'">
+              <AppButton
+                v-if="getQuizStatus(q).canStart"
+                :to="`/student/quizzes/${q.id}/exam`"
+                variant="primary"
+                size="sm"
+                block
+              >
+                <span>Mulai Ujian CBT</span>
+                <svg class="w-4 h-4 ml-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </AppButton>
+              <div
+                v-else
+                class="w-full py-2.5 px-3 rounded-xl bg-slate-100 border border-slate-200 text-center text-xs font-bold text-slate-500 cursor-not-allowed"
+              >
+                {{ getQuizStatus(q).buttonText }}
+              </div>
+            </template>
+
+            <AppButton
+              v-else
+              :to="q.meet?.course?.id ? `/elearning/courses/${q.meet.course.id}?meet=${q.meet.meeting_number}` : `/elearning`"
+              variant="outline"
+              size="sm"
+              block
             >
-              <span>Mulai Ujian CBT</span>
-              <svg class="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <span>Kumpulkan Tugas Mandiri</span>
+              <svg class="w-4 h-4 ml-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
               </svg>
-            </NuxtLink>
-
-            <NuxtLink
-              v-else
-              :to="`/elearning/meets/${q.meet_id}?tab=quizzes`"
-              class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition"
-            >
-              <span>Kumpulkan Tugas di Kelas →</span>
-            </NuxtLink>
+            </AppButton>
           </div>
-        </div>
+        </AppCard>
       </div>
     </div>
 
     <!-- TAB 2: EXAM HISTORY & SCORES -->
     <div v-else-if="activeTab === 'history'">
-      <div v-if="filteredHistory.length === 0" class="bg-white rounded-3xl border border-slate-100 p-12 text-center space-y-3">
-        <div class="w-12 h-12 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </div>
-        <h3 class="text-sm font-bold text-slate-800">Belum ada riwayat ujian</h3>
-        <p class="text-xs text-slate-500 max-w-sm mx-auto">
-          Anda belum mengumpulkan ujian atau tugas apa pun.
-        </p>
-      </div>
+      <AppEmptyState
+        v-if="filteredHistory.length === 0"
+        title="Belum ada riwayat ujian"
+        description="Anda belum menyelesaikan sesi ujian atau mengumpulkan tugas."
+      />
 
-      <div v-else class="bg-white rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
+      <AppCard v-else class="!p-0 overflow-hidden">
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs">
             <thead>
-              <tr class="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wider text-[11px]">
+              <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase tracking-wider text-[11px]">
                 <th class="py-3.5 px-4 font-bold">Judul Asesmen / Tugas</th>
                 <th class="py-3.5 px-4 font-bold">Mata Pelajaran</th>
                 <th class="py-3.5 px-4 font-bold">Waktu Dikirim</th>
@@ -291,35 +354,29 @@ onMounted(() => {
                 <th class="py-3.5 px-4 font-bold">Catatan Guru</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr v-for="item in filteredHistory" :key="item.submission.id" class="hover:bg-slate-50/70 transition">
+            <tbody class="divide-y divide-slate-200/80">
+              <tr v-for="item in filteredHistory" :key="item.submission.id" class="hover:bg-slate-50 transition">
                 <td class="py-3.5 px-4 font-bold text-slate-900">
                   <div class="flex items-center gap-2">
-                    <span
-                      class="px-2 py-0.5 rounded-md text-[10px] font-bold"
-                      :class="item.quiz?.quiz_type === 'multiple_choice' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'"
-                    >
+                    <AppBadge :variant="item.quiz?.quiz_type === 'multiple_choice' ? 'brand' : 'warning'" size="xs">
                       {{ item.quiz?.quiz_type === 'multiple_choice' ? 'CBT' : 'Tugas' }}
-                    </span>
+                    </AppBadge>
                     <span>{{ item.quiz?.title || 'Ujian / Tugas' }}</span>
                   </div>
                 </td>
                 <td class="py-3.5 px-4 text-slate-600 font-medium">
                   {{ item.quiz?.meet?.course?.subject?.name || '-' }}
                 </td>
-                <td class="py-3.5 px-4 text-slate-400 font-mono text-[11px]">
+                <td class="py-3.5 px-4 text-slate-500 font-mono text-[11px]">
                   {{ item.submission.submitted_at || '-' }}
                 </td>
                 <td class="py-3.5 px-4 text-center">
-                  <span
-                    class="px-2.5 py-1 rounded-full text-[10px] font-bold"
-                    :class="item.submission.status === 'graded' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
-                  >
+                  <AppBadge :variant="item.submission.status === 'graded' ? 'success' : 'warning'" size="xs">
                     {{ item.submission.status === 'graded' ? 'Sudah Dinilai' : 'Menunggu Koreksi' }}
-                  </span>
+                  </AppBadge>
                 </td>
                 <td class="py-3.5 px-4 text-center">
-                  <span v-if="item.submission.score !== null" class="font-extrabold text-sm text-emerald-600">
+                  <span v-if="item.submission.score !== null" class="font-extrabold text-sm text-emerald-700">
                     {{ item.submission.score }} <span class="text-xs text-slate-400 font-normal">/ {{ item.quiz?.max_score || 100 }}</span>
                   </span>
                   <span v-else class="text-slate-400 font-mono">-</span>
@@ -331,7 +388,7 @@ onMounted(() => {
             </tbody>
           </table>
         </div>
-      </div>
+      </AppCard>
     </div>
   </div>
 </template>

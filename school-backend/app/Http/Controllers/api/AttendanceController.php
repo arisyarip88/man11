@@ -256,18 +256,69 @@ class AttendanceController extends Controller
             ], 404);
         }
 
-        // Ambil semua presensi siswa beserta data pertemuan dan mata pelajarannya
-        $attendances = MeetAttendance::where('student_id', $student->id)
+        // Ambil presensi dari MeetAttendance (lama) dan SessionAttendance (baru KbmSession)
+        $meetAttendances = MeetAttendance::where('student_id', $student->id)
             ->with(['meet.course.subject', 'meet.course.class.className'])
             ->orderBy('updated_at', 'desc')
             ->get();
 
+        $sessionAttendances = \App\Models\SessionAttendance::where('student_id', $student->id)
+            ->with([
+                'session.course.subject',
+                'session.course.class.className',
+                'session.activeMeet',
+            ])
+            ->orderBy('checkin_at', 'desc')
+            ->get();
+
+        $records = collect();
+
+        // 1. Petakan record SessionAttendance (KbmSession modern)
+        foreach ($sessionAttendances as $sAtt) {
+            $sess = $sAtt->session;
+            $records->push([
+                'id'             => 'sess_' . $sAtt->id,
+                'session_id'     => $sAtt->session_id,
+                'meet_id'        => $sess?->active_meet_id,
+                'status'         => $sAtt->status,
+                'method'         => $sAtt->method,
+                'notes'          => $sAtt->notes,
+                'recorded_at'    => $sAtt->checkin_at ? $sAtt->checkin_at->toDateTimeString() : ($sAtt->updated_at ? $sAtt->updated_at->toDateTimeString() : null),
+                'meeting_title'  => $sess?->activeMeet?->title ?: ('Sesi KBM (' . ($sess?->date ? $sess->date->format('d/m/Y') : 'Tatap Muka') . ')'),
+                'meeting_number' => $sess?->activeMeet?->meeting_number ?: null,
+                'subject_name'   => $sess?->course?->subject?->name ?: 'Mata Pelajaran',
+                'class_name'     => $sess?->course?->class?->className?->name ?: 'Kelas',
+                'type'           => 'kbm_session',
+            ]);
+        }
+
+        // 2. Petakan record MeetAttendance (Legacy meet)
+        foreach ($meetAttendances as $att) {
+            $records->push([
+                'id'             => 'meet_' . $att->id,
+                'session_id'     => null,
+                'meet_id'        => $att->meet_id,
+                'status'         => $att->status,
+                'method'         => 'meet_checkin',
+                'notes'          => $att->notes,
+                'recorded_at'    => $att->updated_at ? $att->updated_at->toDateTimeString() : null,
+                'meeting_title'  => $att->meet?->title ?: 'Pertemuan',
+                'meeting_number' => $att->meet?->meeting_number,
+                'subject_name'   => $att->meet?->course?->subject?->name ?: 'Mata Pelajaran',
+                'class_name'     => $att->meet?->course?->class?->className?->name ?: 'Kelas',
+                'type'           => 'legacy_meet',
+            ]);
+        }
+
+        // Urutkan berdasarkan waktu pencatatan terbaru
+        $sortedRecords = $records->sortByDesc('recorded_at')->values();
+
         $stats = [
-            'total' => $attendances->count(),
-            'H'     => $attendances->where('status', 'H')->count(),
-            'S'     => $attendances->where('status', 'S')->count(),
-            'I'     => $attendances->where('status', 'I')->count(),
-            'A'     => $attendances->where('status', 'A')->count(),
+            'total' => $sortedRecords->count(),
+            'H'     => $sortedRecords->where('status', 'H')->count(),
+            'S'     => $sortedRecords->where('status', 'S')->count(),
+            'I'     => $sortedRecords->where('status', 'I')->count(),
+            'A'     => $sortedRecords->where('status', 'A')->count(),
         ];
 
         $attendanceRate = $stats['total'] > 0
@@ -285,19 +336,7 @@ class AttendanceController extends Controller
                 ],
                 'stats'           => $stats,
                 'attendance_rate' => $attendanceRate,
-                'records'         => $attendances->map(function ($att) {
-                    return [
-                        'id'             => $att->id,
-                        'meet_id'        => $att->meet_id,
-                        'status'         => $att->status,
-                        'notes'          => $att->notes,
-                        'recorded_at'    => $att->updated_at ? $att->updated_at->toDateTimeString() : null,
-                        'meeting_title'  => $att->meet?->title ?: 'Pertemuan',
-                        'meeting_number' => $att->meet?->meeting_number,
-                        'subject_name'   => $att->meet?->course?->subject?->name ?: 'Mata Pelajaran',
-                        'class_name'     => $att->meet?->course?->class?->className?->name ?: 'Kelas',
-                    ];
-                }),
+                'records'         => $sortedRecords,
             ]
         ]);
     }

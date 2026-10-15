@@ -18,10 +18,20 @@ interface QuestionBank {
   teacher_id: number
   subject_id: number
   grade_level: string
+  difficulty?: 'easy' | 'medium' | 'hard' | null
   title: string
   description: string
   is_public: boolean
   items_count?: number
+  difficulty_summary?: {
+    total: number
+    easy: number
+    medium: number
+    hard: number
+    easy_pct: number
+    medium_pct: number
+    hard_pct: number
+  }
   created_at: string
   subject?: Subject
   teacher?: { id: number; name: string }
@@ -37,6 +47,7 @@ const activeTab = ref<'all' | 'my' | 'public'>('my')
 const search = ref('')
 const selectedGrade = ref('')
 const selectedSubject = ref('')
+const selectedDifficulty = ref('')
 
 // Modal Form State
 const isModalOpen = ref(false)
@@ -44,6 +55,7 @@ const editingId = ref<number | null>(null)
 const form = ref({
   subject_id: '',
   grade_level: '11',
+  difficulty: '',
   title: '',
   description: '',
   is_public: false,
@@ -96,8 +108,9 @@ const filteredBanks = computed(() => {
     
     const matchGrade = !selectedGrade.value || item.grade_level === selectedGrade.value
     const matchSubject = !selectedSubject.value || String(item.subject_id) === String(selectedSubject.value)
+    const matchDifficulty = !selectedDifficulty.value || item.difficulty === selectedDifficulty.value
 
-    return matchSearch && matchGrade && matchSubject
+    return matchSearch && matchGrade && matchSubject && matchDifficulty
   })
 })
 
@@ -111,6 +124,7 @@ const openAddModal = () => {
   form.value = {
     subject_id: subjects.value[0]?.id ? String(subjects.value[0].id) : '',
     grade_level: '11',
+    difficulty: '',
     title: '',
     description: '',
     is_public: false,
@@ -124,6 +138,7 @@ const openEditModal = (item: QuestionBank) => {
   form.value = {
     subject_id: String(item.subject_id),
     grade_level: item.grade_level,
+    difficulty: item.difficulty || '',
     title: item.title,
     description: item.description || '',
     is_public: item.is_public,
@@ -299,6 +314,17 @@ const deleteQuestionBank = async (id: number) => {
           <option value="11">Kelas 11</option>
           <option value="12">Kelas 12</option>
         </select>
+
+        <!-- B6: Filter Tingkat Kesulitan -->
+        <select
+          v-model="selectedDifficulty"
+          class="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+        >
+          <option value="">Semua Kesulitan</option>
+          <option value="easy">🟢 Mudah</option>
+          <option value="medium">🟡 Sedang</option>
+          <option value="hard">🔴 Sulit</option>
+        </select>
       </div>
     </div>
 
@@ -341,7 +367,19 @@ const deleteQuestionBank = async (id: number) => {
             <span class="px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200/60 font-mono text-[10px] font-extrabold text-emerald-800">
               ID #BS-{{ bank.id }}
             </span>
-            <div class="flex items-center gap-1.5">
+            <div class="flex items-center gap-1.5 flex-wrap justify-end">
+              <!-- B5: Badge Kesulitan Paket -->
+              <span
+                v-if="bank.difficulty"
+                class="text-[9px] font-bold px-2 py-0.5 rounded-full capitalize"
+                :class="{
+                  'bg-emerald-100 text-emerald-800 border border-emerald-200': bank.difficulty === 'easy',
+                  'bg-amber-100 text-amber-800 border border-amber-200': bank.difficulty === 'medium',
+                  'bg-rose-100 text-rose-800 border border-rose-200': bank.difficulty === 'hard',
+                }"
+              >
+                {{ bank.difficulty === 'easy' ? '🟢 Mudah' : (bank.difficulty === 'medium' ? '🟡 Sedang' : '🔴 Sulit') }}
+              </span>
               <span v-if="bank.is_public" class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
                 Publik
               </span>
@@ -360,6 +398,23 @@ const deleteQuestionBank = async (id: number) => {
           <p v-if="bank.description" class="text-[11px] text-slate-500 mt-2 line-clamp-2 leading-relaxed">
             {{ bank.description }}
           </p>
+
+          <!-- B5: Bar Komposisi Mini Kesulitan Butir Soal -->
+          <div v-if="bank.difficulty_summary && bank.difficulty_summary.total > 0" class="mt-3.5 p-2 bg-slate-50/70 border border-slate-100 rounded-xl space-y-1.5">
+            <div class="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+              <span>Rasio Butir Soal:</span>
+              <span class="font-mono text-[10px]">
+                <span class="text-emerald-700 font-bold">{{ bank.difficulty_summary.easy }} Mudah</span> • 
+                <span class="text-amber-700 font-bold">{{ bank.difficulty_summary.medium }} Sedang</span> • 
+                <span class="text-rose-700 font-bold">{{ bank.difficulty_summary.hard }} Sulit</span>
+              </span>
+            </div>
+            <div class="w-full h-1.5 rounded-full bg-slate-200 overflow-hidden flex">
+              <div :style="{ width: bank.difficulty_summary.easy_pct + '%' }" class="bg-emerald-500 h-full" title="Mudah"></div>
+              <div :style="{ width: bank.difficulty_summary.medium_pct + '%' }" class="bg-amber-400 h-full" title="Sedang"></div>
+              <div :style="{ width: bank.difficulty_summary.hard_pct + '%' }" class="bg-rose-500 h-full" title="Sulit"></div>
+            </div>
+          </div>
 
           <!-- Total Items Badge -->
           <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
@@ -469,6 +524,20 @@ const deleteQuestionBank = async (id: number) => {
                 <option value="12">Kelas 12</option>
               </select>
             </div>
+          </div>
+
+          <!-- B4: Tingkat Kesulitan Paket Soal -->
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">Tingkat Kesulitan Paket</label>
+            <select
+              v-model="form.difficulty"
+              class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+            >
+              <option value="">Bebas / Campuran</option>
+              <option value="easy">🟢 Mudah (Dasar & Konseptual)</option>
+              <option value="medium">🟡 Sedang (Penerapan & Prosedural)</option>
+              <option value="hard">🔴 Sulit (Penalaran Tinggi / HOTS)</option>
+            </select>
           </div>
 
           <!-- Deskripsi -->

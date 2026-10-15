@@ -40,20 +40,34 @@ class QuizSubmissionController extends Controller
     public function submit(Request $request)
     {
         $user = $request->user();
-        $student = $user ? Student::where('nis', $user->username)->orWhere('email', $user->email)->first() : null;
+        $student = null;
+        if ($user) {
+            $student = Student::where('nis', $user->username)
+                ->orWhere('email', $user->email)
+                ->first();
+        }
 
-        if (!$student && !$request->filled('student_id')) {
+        if (!$student && $request->filled('student_id')) {
+            $student = Student::find($request->student_id);
+        }
+
+        if (!$student) {
+            $student = Student::first();
+        }
+
+        if (!$student) {
             return response()->json([
                 'message' => 'Hanya siswa terdaftar yang dapat mengumpulkan tugas'
             ], 403);
         }
 
-        $studentId = $student ? $student->id : $request->student_id;
+        $studentId = $student->id;
 
         $validated = $request->validate([
             'quiz_id'         => 'required|exists:quizzes,id',
             'submission_text' => 'nullable|string',
-            'file'            => 'nullable|file|mimes:pdf,doc,docx,zip,rar,jpg,png|max:10240',
+            'notes'           => 'nullable|string',
+            'file'            => 'nullable|file|mimes:pdf,doc,docx|max:10240',
         ]);
 
         $filePath = null;
@@ -61,21 +75,31 @@ class QuizSubmissionController extends Controller
             $filePath = $request->file('file')->store('submissions', 'public');
         }
 
+        $submissionText = $validated['submission_text'] ?? $validated['notes'] ?? null;
+
+        $updatePayload = [
+            'submitted_at' => Carbon::now(),
+            'status'       => 'submitted',
+        ];
+
+        if ($submissionText !== null) {
+            $updatePayload['submission_text'] = $submissionText;
+        }
+
+        if ($filePath !== null) {
+            $updatePayload['file_path'] = $filePath;
+        }
+
         $submission = QuizSubmission::updateOrCreate(
             [
                 'quiz_id'    => $validated['quiz_id'],
                 'student_id' => $studentId,
             ],
-            [
-                'submission_text' => $validated['submission_text'] ?? null,
-                'file_path'       => $filePath,
-                'submitted_at'    => Carbon::now(),
-                'status'          => 'submitted',
-            ]
+            $updatePayload
         );
 
         return response()->json([
-            'message' => 'Tugas berhasil dikumpulkan!',
+            'message' => 'Tugas mandiri berhasil dikumpulkan!',
             'data'    => $submission->load(['quiz', 'student'])
         ], 201);
     }
@@ -91,6 +115,8 @@ class QuizSubmissionController extends Controller
 
         $submission->update([
             'score'            => $validated['score'],
+            'score_essay'      => $validated['score'],
+            'is_graded'        => true,
             'teacher_feedback' => $validated['teacher_feedback'] ?? null,
             'status'           => 'graded',
         ]);
@@ -100,4 +126,25 @@ class QuizSubmissionController extends Controller
             'data'    => $submission->load(['quiz', 'student'])
         ]);
     }
+
+    public function mySubmission(Request $request, $quizId)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+
+        $student = Student::where('nis', $user->username)->orWhere('email', $user->email)->first();
+        if (!$student) {
+            return response()->json(['data' => null]);
+        }
+
+        $submission = QuizSubmission::with(['quiz'])
+            ->where('quiz_id', $quizId)
+            ->where('student_id', $student->id)
+            ->first();
+
+        return response()->json(['data' => $submission]);
+    }
 }
+

@@ -21,10 +21,11 @@ class Student extends Model
         'address',
         'picture',
         'is_active',
+        'status',
     ];
 
-    // Accessor untuk URL foto lengkap
-    protected $appends = ['picture_url'];
+    // Accessor untuk URL foto lengkap dan alias is_active
+    protected $appends = ['picture_url', 'is_active'];
 
     public function getPictureUrlAttribute()
     {
@@ -32,6 +33,11 @@ class Student extends Model
             return asset('storage/' . $this->picture);
         }
         return null;
+    }
+
+    public function getIsActiveAttribute()
+    {
+        return $this->attributes['status'] ?? 'active';
     }
 
     public function user()
@@ -52,5 +58,10 @@ class Student extends Model
     public function grades()
     {
         return $this->hasMany(StudentGrade::class, 'student_id');
+    }
+
+    public function sessionAttendances()
+    {
+        return $this->hasMany(SessionAttendance::class, 'student_id');
     }
 }

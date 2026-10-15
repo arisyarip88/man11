@@ -1,20 +1,29 @@
 <script setup>
 import { computed, ref, reactive, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import BackButton from '~/components/ui/BackButton.vue'
 
 definePageMeta({
   layout: 'default'
 })
 
 const route = useRoute()
+const router = useRouter()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase || 'http://localhost:8000/api'
 const storageBase = config.public.storageBase || 'http://localhost:8000/storage'
 const token = useCookie('auth_token')
 const { user, getUserRole } = useAuth()
 const canManageLearning = computed(() => ['admin', 'super_admin', 'teacher', 'guru'].includes(getUserRole()))
+const isStudent = computed(() => ['student', 'siswa'].includes(getUserRole()))
 
-const activeTab = ref(route.query.tab === 'attendance' ? 'attendance' : 'materials') // 'materials', 'quizzes', 'discussions', 'attendance'
+const validTabs = ['materials', 'quizzes', 'discussions', 'attendance']
+const activeTab = ref(validTabs.includes(String(route.query.tab)) ? String(route.query.tab) : 'materials') // 'materials', 'quizzes', 'discussions', 'attendance'
+
+const selectTab = (tab) => {
+  activeTab.value = tab
+  router.replace({ query: { ...route.query, tab } })
+}
 const meet = ref(null)
 const quizzes = ref([])
 const discussions = ref([])
@@ -70,12 +79,18 @@ const quizForm = reactive({
   title: '',
   instructions: '',
   quiz_type: 'assignment',
+  activity_category: 'assignment',
   due_date: '',
   max_score: 100
 })
 
 const quizMode = ref('manual') // 'manual' | 'bank'
 const questionBanks = ref([])
+const bankDifficultyFilter = ref('')
+const filteredQuestionBanks = computed(() => {
+  if (!bankDifficultyFilter.value) return questionBanks.value
+  return questionBanks.value.filter(b => b.difficulty === bankDifficultyFilter.value)
+})
 const selectedBankId = ref('')
 const quizDuration = ref(60)
 const isSyncingQuiz = ref(false)
@@ -296,6 +311,7 @@ const handleSaveQuiz = async () => {
       ...quizForm,
       meet_id: route.params.id,
       quiz_type: isCbt ? 'multiple_choice' : quizForm.quiz_type,
+      activity_category: quizForm.activity_category || (isCbt ? 'quiz' : 'assignment'),
       duration_minutes: isCbt ? quizDuration.value : null
     }
 
@@ -395,15 +411,12 @@ const getEmbedYoutubeUrl = (url) => {
     <!-- Header -->
     <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <NuxtLink 
-          :to="meet ? `/elearning/courses/${meet.course_id}` : '/elearning'" 
-          class="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-emerald-600 transition"
-        >
-          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-          Kembali ke Daftar Pertemuan
-        </NuxtLink>
+        <div class="flex items-center gap-3">
+          <BackButton
+            :fallback="meet ? `/elearning/courses/${meet.course_id}` : (isStudent ? '/student/dashboard?tab=courses' : '/teacher/classes')"
+            label="Kembali ke Kelas Pembelajaran"
+          />
+        </div>
         <span class="text-xs font-bold text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full">
           Pertemuan {{ meet?.meeting_number || '-' }}
         </span>
@@ -420,9 +433,14 @@ const getEmbedYoutubeUrl = (url) => {
         <div class="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-100 mb-6">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider">
-                {{ meet.course?.subject?.name }} ({{ meet.course?.class?.class_name?.name }})
-              </span>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider">
+                  {{ meet.course?.subject?.name }} ({{ meet.course?.class?.class_name?.name }})
+                </span>
+                <span v-if="meet.chapter" class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200">
+                  Bab {{ meet.chapter.order || '' }}: {{ meet.chapter.title }}
+                </span>
+              </div>
               <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">
                 {{ meet.title }}
               </h1>
@@ -432,7 +450,7 @@ const getEmbedYoutubeUrl = (url) => {
               <a 
                 :href="meet.meeting_link" 
                 target="_blank"
-                class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition shadow-sm flex items-center gap-2"
+                class="px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition shadow-xs flex items-center gap-2"
               >
                 Gabung Virtual Meet (Zoom/GMeet)
               </a>
@@ -446,32 +464,32 @@ const getEmbedYoutubeUrl = (url) => {
           <!-- Tab Selector Header -->
           <div class="flex flex-wrap gap-2 pt-6 border-t border-slate-100 mt-6">
             <button 
-              @click="activeTab = 'materials'"
+              @click="selectTab('materials')"
               class="px-4 py-2 rounded-xl font-bold text-xs transition"
-              :class="activeTab === 'materials' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+              :class="activeTab === 'materials' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
             >
-              📁 Modul & Materi ({{ meet.materials?.length || 0 }})
+              Modul & Materi ({{ meet.materials?.length || 0 }})
             </button>
             <button 
-              @click="activeTab = 'quizzes'"
+              @click="selectTab('quizzes')"
               class="px-4 py-2 rounded-xl font-bold text-xs transition"
-              :class="activeTab === 'quizzes' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+              :class="activeTab === 'quizzes' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
             >
-              📝 Kuis & Tugas ({{ quizzes.length }})
+              Kuis & Tugas ({{ quizzes.length }})
             </button>
             <button 
-              @click="activeTab = 'discussions'"
+              @click="selectTab('discussions')"
               class="px-4 py-2 rounded-xl font-bold text-xs transition"
-              :class="activeTab === 'discussions' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+              :class="activeTab === 'discussions' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
             >
-              💬 Forum Diskusi ({{ discussions.length }})
+              Forum Diskusi ({{ discussions.length }})
             </button>
             <button 
-              @click="activeTab = 'attendance'"
+              @click="selectTab('attendance')"
               class="px-4 py-2 rounded-xl font-bold text-xs transition flex items-center gap-1.5"
-              :class="activeTab === 'attendance' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+              :class="activeTab === 'attendance' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
             >
-              📋 Presensi Kehadiran
+              Presensi Kehadiran
               <span class="rounded-full px-1.5 py-0.5 text-[10px]" :class="activeTab === 'attendance' ? 'bg-white/20 text-white font-bold' : 'bg-emerald-100 text-emerald-800 font-bold'">
                 {{ attendanceStats.total || attendances.length }}
               </span>
@@ -954,22 +972,48 @@ const getEmbedYoutubeUrl = (url) => {
             <input v-model="quizForm.title" type="text" placeholder="Misal: Penilaian Harian Bab 1 / Tugas Mandiri" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none" required>
           </div>
 
+          <!-- Kategori Aktivitas Pembelajaran -->
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Kategori Aktivitas LMS</label>
+            <select v-model="quizForm.activity_category" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-none font-semibold text-slate-800">
+              <option value="pretest">1. Pretest (Asesmen Diagnostik Awal)</option>
+              <option value="quiz">4. Kuis Formatif (Pemahaman Konsep)</option>
+              <option value="assignment">5. Tugas Mandiri (Pengumpulan File Siswa)</option>
+              <option value="posttest">6. Posttest (Asesmen Sumatif Akhir)</option>
+            </select>
+          </div>
+
           <!-- If Bank Soal Selected -->
           <div v-if="quizMode === 'bank'" class="p-4 bg-purple-50/70 border border-purple-100 rounded-xl space-y-3">
             <div>
-              <label class="block font-bold text-purple-900 mb-1">Pilih Bank Soal Guru</label>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block font-bold text-purple-900">Pilih Bank Soal Guru</label>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[10px] text-purple-800 font-semibold">Kesulitan:</span>
+                  <select
+                    v-model="bankDifficultyFilter"
+                    class="px-2 py-0.5 bg-white border border-purple-200 rounded-lg text-[11px] font-bold text-slate-700"
+                  >
+                    <option value="">Semua</option>
+                    <option value="easy">🟢 Mudah</option>
+                    <option value="medium">🟡 Sedang</option>
+                    <option value="hard">🔴 Sulit</option>
+                  </select>
+                </div>
+              </div>
               <select 
                 v-model="selectedBankId" 
                 class="w-full p-2.5 bg-white border border-purple-200 rounded-xl text-purple-950 font-medium focus:ring-2 focus:ring-purple-500 focus:outline-none"
                 required
               >
                 <option value="" disabled>-- Pilih Bank Soal yang Tersedia --</option>
-                <option v-for="b in questionBanks" :key="b.id" :value="b.id">
+                <option v-for="b in filteredQuestionBanks" :key="b.id" :value="b.id">
+                  [{{ b.difficulty === 'easy' ? '🟢 Mudah' : b.difficulty === 'medium' ? '🟡 Sedang' : b.difficulty === 'hard' ? '🔴 Sulit' : '⚪ Umum' }}]
                   {{ b.title }} ({{ b.grade_level ? 'Kelas ' + b.grade_level : '' }} • {{ b.items_count || (b.items ? b.items.length : 0) }} Butir Soal)
                 </option>
               </select>
-              <p v-if="questionBanks.length === 0" class="text-[11px] text-amber-600 mt-1">
-                Belum ada Bank Soal. Buat di menu Bank Soal terlebih dahulu.
+              <p v-if="filteredQuestionBanks.length === 0" class="text-[11px] text-amber-600 mt-1">
+                Tidak ada Bank Soal yang sesuai dengan filter kesulitan yang dipilih.
               </p>
             </div>
 

@@ -11,7 +11,7 @@ class QuestionBankController extends Controller
 {
     public function index(Request $request)
     {
-        $query = QuestionBank::with(['subject', 'teacher'])->withCount('items');
+        $query = QuestionBank::with(['subject', 'teacher', 'items:id,question_bank_id,difficulty'])->withCount('items');
 
         $teacherId = null;
         if ($request->user() && $request->user()->teacher) {
@@ -36,6 +36,11 @@ class QuestionBankController extends Controller
 
         if ($request->filled('grade_level')) {
             $query->where('grade_level', $request->grade_level);
+        }
+
+        // B3: Filter berdasarkan tingkat kesulitan paket soal
+        if ($request->filled('difficulty')) {
+            $query->where('difficulty', $request->difficulty);
         }
 
         if ($request->filled('search')) {
@@ -66,6 +71,7 @@ class QuestionBankController extends Controller
         $validated = $request->validate([
             'subject_id'   => 'required|exists:subjects,id',
             'grade_level'  => 'required|string|in:10,11,12',
+            'difficulty'   => 'nullable|string|in:easy,medium,hard',
             'title'        => 'required|string|max:255',
             'description'  => 'nullable|string',
             'is_public'    => 'nullable|boolean',
@@ -84,7 +90,7 @@ class QuestionBankController extends Controller
         $validated['teacher_id'] = $teacherId;
 
         $questionBank = QuestionBank::create($validated);
-        $questionBank->load(['subject', 'teacher'])->loadCount('items');
+        $questionBank->load(['subject', 'teacher', 'items'])->loadCount('items');
 
         return response()->json([
             'success' => true,
@@ -110,13 +116,14 @@ class QuestionBankController extends Controller
         $validated = $request->validate([
             'subject_id'   => 'required|exists:subjects,id',
             'grade_level'  => 'required|string|in:10,11,12',
+            'difficulty'   => 'nullable|string|in:easy,medium,hard',
             'title'        => 'required|string|max:255',
             'description'  => 'nullable|string',
             'is_public'    => 'nullable|boolean',
         ]);
 
         $questionBank->update($validated);
-        $questionBank->load(['subject', 'teacher'])->loadCount('items');
+        $questionBank->load(['subject', 'teacher', 'items'])->loadCount('items');
 
         return response()->json([
             'success' => true,
@@ -151,22 +158,99 @@ class QuestionBankController extends Controller
         ]);
     }
 
-    public function storeItem(Request $request, $bankId)
+    /**
+     * Validasi butir soal sesuai tipe. Mengembalikan payload siap simpan.
+     */
+    private function validateItemPayload(Request $request): array
     {
-        $questionBank = QuestionBank::findOrFail($bankId);
-
         $validated = $request->validate([
-            'type'           => 'required|in:pg,pg_kompleks,esai,isian',
+            'type'           => 'required|in:' . implode(',', \App\Services\QuestionScorer::TYPES),
             'question'       => 'required|string',
             'options'        => 'nullable|array',
+            'data'           => 'nullable|array',
             'correct_answer' => 'nullable|string',
             'explanation'    => 'nullable|string',
             'difficulty'     => 'nullable|in:easy,medium,hard',
             'weight'         => 'nullable|numeric|min:0.1',
         ]);
 
+        $type = $validated['type'];
+        $options = $validated['options'] ?? [];
+        $data = $validated['data'] ?? [];
+        $errors = [];
+
+        if (in_array($type, ['pg', 'pg_kompleks'])) {
+            if (count($options) < 2) {
+                $errors['options'] = 'Minimal 2 pilihan jawaban.';
+            } else {
+                $correct = count(array_filter($options, fn ($o) => !empty($o['is_correct'])));
+                if ($type === 'pg' && $correct !== 1) {
+                    $errors['options'] = 'Pilihan ganda harus punya tepat 1 kunci benar.';
+                } elseif ($type === 'pg_kompleks' && $correct < 1) {
+                    $errors['options'] = 'PG kompleks harus punya minimal 1 kunci benar.';
+                }
+            }
+            $data = null;
+        } elseif ($type === 'isian') {
+            $answers = array_values(array_filter(
+                array_map(fn ($a) => trim((string) $a), $data['accepted_answers'] ?? []),
+                fn ($a) => $a !== ''
+            ));
+            $data = ['accepted_answers' => $answers];
+            $options = null;
+        } elseif ($type === 'menjodohkan') {
+            $pairs = [];
+            foreach (($data['pairs'] ?? []) as $i => $p) {
+                $left = trim((string) ($p['left'] ?? ''));
+                $right = trim((string) ($p['right'] ?? ''));
+                if ($left !== '' && $right !== '') {
+                    $pairs[] = ['id' => (string) ($i + 1), 'left' => $left, 'right' => $right];
+                }
+            }
+            if (count($pairs) < 2) {
+                $errors['data'] = 'Menjodohkan butuh minimal 2 pasangan lengkap.';
+            }
+            $data = ['pairs' => $pairs];
+            $options = null;
+        } elseif ($type === 'benar_salah') {
+            $statements = [];
+            foreach (($data['statements'] ?? []) as $i => $s) {
+                $text = trim((string) ($s['text'] ?? ''));
+                if ($text !== '') {
+                    $statements[] = [
+                        'id' => (string) ($i + 1),
+                        'text' => $text,
+                        'answer' => filter_var($s['answer'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                    ];
+                }
+            }
+            if (count($statements) < 1) {
+                $errors['data'] = 'Benar/Salah butuh minimal 1 pernyataan.';
+            }
+            $data = ['statements' => $statements];
+            $options = null;
+        } else { // esai
+            $data = null;
+            $options = null;
+        }
+
+        if (!empty($errors)) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+        }
+
+        $validated['options'] = $options ?: null;
+        $validated['data'] = $data;
         $validated['difficulty'] = $validated['difficulty'] ?? 'medium';
         $validated['weight'] = $validated['weight'] ?? 1.0;
+
+        return $validated;
+    }
+
+    public function storeItem(Request $request, $bankId)
+    {
+        $questionBank = QuestionBank::findOrFail($bankId);
+
+        $validated = $this->validateItemPayload($request);
 
         $item = $questionBank->items()->create($validated);
 
@@ -181,15 +265,7 @@ class QuestionBankController extends Controller
     {
         $item = QuestionBankItem::findOrFail($itemId);
 
-        $validated = $request->validate([
-            'type'           => 'required|in:pg,pg_kompleks,esai,isian',
-            'question'       => 'required|string',
-            'options'        => 'nullable|array',
-            'correct_answer' => 'nullable|string',
-            'explanation'    => 'nullable|string',
-            'difficulty'     => 'nullable|in:easy,medium,hard',
-            'weight'         => 'nullable|numeric|min:0.1',
-        ]);
+        $validated = $this->validateItemPayload($request);
 
         $item->update($validated);
 

@@ -29,4 +29,19 @@ class Course extends Model
     {
         return $this->hasMany(Meet::class);
     }
+
+    public function chapters()
+    {
+        return $this->hasMany(Chapter::class)->orderBy('order', 'asc');
+    }
+
+    public function schedules()
+    {
+        return $this->hasMany(Schedule::class);
+    }
+
+    public function kbmSessions()
+    {
+        return $this->hasMany(KbmSession::class);
+    }
 }

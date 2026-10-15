@@ -25,3 +25,14 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Temporary & Scratch Development Scripts
+scratch/
+school-backend/scratch/
+tests_qa/
+*.tmp
+
+# Environment & Secrets Safety Net
+.env
+.env.*
+!.env.example

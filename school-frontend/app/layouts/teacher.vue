@@ -26,16 +26,61 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-const generalMenuItems = [
+// 1. KBM & Ruang Kelas (Aktivitas Mengajar Utama)
+const kbmMenuItems = [
   {
     label: 'Dashboard',
     to: '/teacher/dashboard',
     icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6'
   },
   {
-    label: 'Silabus (ATP / CP)',
+    label: 'Kelas Saya',
+    to: '/teacher/classes',
+    icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253',
+    badge: 'KBM'
+  },
+  {
+    label: 'Presensi',
+    to: '/teacher/attendance',
+    icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4'
+  },
+  {
+    label: 'Edu Board',
+    to: '/teacher/board',
+    icon: 'M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01'
+  },
+]
+
+// 2. Administrasi & Evaluasi
+const adminMenuItems = [
+  {
+    label: 'Buku Nilai',
+    to: '/teacher/grades',
+    icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
+  },
+  {
+    label: 'Jurnal Guru',
+    to: '/teacher/journals',
+    icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'
+  },
+]
+
+// 3. Sumber Belajar & Bank Soal
+const resourceMenuItems = [
+  {
+    label: 'Silabus (ATP/CP)',
     to: '/teacher/syllabus',
     icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'
+  },
+  {
+    label: 'Bank Materi',
+    to: '/teacher/materials/bank',
+    icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10'
+  },
+  {
+    label: 'Bank Soal & CBT',
+    to: '/teacher/questions/bank',
+    icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01'
   },
   {
     label: 'Kelas Master',
@@ -43,48 +88,9 @@ const generalMenuItems = [
     icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
     badge: 'Multi-Rombel'
   },
-  {
-    label: 'Kelas Saya',
-    to: '/teacher/classes',
-    icon: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253'
-  },
-  {
-    label: 'Edu Board',
-    to: '/teacher/board',
-    icon: 'M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01'
-  },
-  {
-    label: 'Jurnal Guru',
-    to: '/teacher/journals',
-    icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z'
-  },
-  {
-    label: 'Buku Nilai',
-    to: '/teacher/grades',
-    icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-    badge: 'K. Merdeka'
-  },
 ]
 
-const bahanAjarMenuItems = [
-  {
-    label: 'Bank Materi',
-    to: '/teacher/materials/bank',
-    icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10'
-  },
-  {
-    label: 'Bank Soal',
-    to: '/teacher/questions/bank',
-    icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01'
-  },
-  {
-    label: 'Kuis & CBT',
-    to: '/teacher/quizzes',
-    icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-    badge: 'Evaluasi'
-  },
-]
-
+// 4. Supervisi (Wali Kelas)
 const supervisiMenuItems = [
   {
     label: 'Presensi Kehadiran',
@@ -129,7 +135,7 @@ const supervisiMenuItems = [
             </div>
             <div>
               <span class="font-extrabold text-sm tracking-tight text-slate-900 block leading-tight">MAN 11 JAKARTA</span>
-              <span class="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider block">LMS Guru Madrasah</span>
+              <span class="text-xs font-bold text-brand-800 uppercase tracking-wider block">LMS Guru Madrasah</span>
             </div>
           </NuxtLink>
           <button
@@ -155,15 +161,65 @@ const supervisiMenuItems = [
         </div>
 
         <!-- Navigation Links Menu -->
-        <div class="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-          <!-- GENERAL SECTION -->
+        <div class="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+          <!-- 1. KBM & RUANG KELAS -->
           <div>
             <div class="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              General
+              KBM & Kelas
             </div>
             <nav class="space-y-1">
               <NuxtLink
-                v-for="item in generalMenuItems"
+                v-for="item in kbmMenuItems"
+                :key="item.to"
+                :to="item.to"
+                class="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-all group"
+                active-class="bg-emerald-600 !text-white shadow-sm shadow-emerald-600/30"
+              >
+                <div class="flex items-center gap-3">
+                  <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
+                  </svg>
+                  <span>{{ item.label }}</span>
+                </div>
+                <span
+                  v-if="item.badge"
+                  class="text-[9px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800 group-hover:bg-emerald-200"
+                >
+                  {{ item.badge }}
+                </span>
+              </NuxtLink>
+            </nav>
+          </div>
+
+          <!-- 2. ADMINISTRASI GURU -->
+          <div>
+            <div class="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Administrasi & Nilai
+            </div>
+            <nav class="space-y-1">
+              <NuxtLink
+                v-for="item in adminMenuItems"
+                :key="item.to"
+                :to="item.to"
+                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-all group"
+                active-class="bg-emerald-600 !text-white shadow-sm shadow-emerald-600/30"
+              >
+                <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
+                </svg>
+                <span>{{ item.label }}</span>
+              </NuxtLink>
+            </nav>
+          </div>
+
+          <!-- 3. SUMBER BELAJAR & BANK SOAL -->
+          <div>
+            <div class="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Bank Materi & Soal
+            </div>
+            <nav class="space-y-1">
+              <NuxtLink
+                v-for="item in resourceMenuItems"
                 :key="item.to"
                 :to="item.to"
                 class="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-all group"
@@ -185,29 +241,8 @@ const supervisiMenuItems = [
             </nav>
           </div>
 
-          <!-- BAHAN AJAR SECTION (Repository Mandiri & Pusat) -->
-          <div>
-            <div class="px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Bahan Ajar
-            </div>
-            <nav class="space-y-1">
-              <NuxtLink
-                v-for="item in bahanAjarMenuItems"
-                :key="item.to"
-                :to="item.to"
-                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-all group"
-                active-class="bg-emerald-600 !text-white shadow-sm shadow-emerald-600/30"
-              >
-                <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
-                </svg>
-                <span>{{ item.label }}</span>
-              </NuxtLink>
-            </nav>
-          </div>
-
-          <!-- SUPERVISI SECTION (Homeroom / Wali Kelas) -->
-          <div>
+          <!-- 4. SUPERVISI SECTION (Khusus Homeroom / Wali Kelas) -->
+          <div v-if="isHomeroom">
             <div class="px-3 mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
               <span>Supervisi</span>
               <span class="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">Wali Kelas</span>

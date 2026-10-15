@@ -10,15 +10,46 @@ class MeetController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Meet::with(['course.subject', 'course.class.className', 'course.teacher'])
+        $query = Meet::with(['course.subject', 'course.class.className', 'course.teacher', 'chapter'])
             ->withCount(['materials', 'quizzes', 'discussions']);
 
         if ($request->filled('course_id')) {
             $query->where('course_id', $request->course_id);
         }
 
+        if ($request->filled('chapter_id')) {
+            if ($request->chapter_id === 'unassigned' || $request->chapter_id === 'null') {
+                $query->whereNull('chapter_id');
+            } else {
+                $query->where('chapter_id', $request->chapter_id);
+            }
+        }
+
+        $user = $request->user();
+        $studentId = null;
+        if ($user && in_array(strtolower($user->role?->name ?? ''), ['student', 'siswa'])) {
+            $student = \App\Models\Student::where('nis', $user->username)->orWhere('email', $user->email)->first();
+            if (!$student) {
+                $student = \App\Models\Student::first();
+            }
+            $studentId = $student?->id;
+        }
+
         if ($request->boolean('with_details')) {
-            $query->with(['materials', 'quizzes']);
+            $query->with([
+                'materials',
+                'chapter',
+                'quizzes.submissions' => function ($sq) use ($studentId) {
+                    if ($studentId) {
+                        $sq->where('student_id', $studentId);
+                    }
+                },
+                'discussions' => function ($dq) {
+                    $dq->whereNull('parent_id')
+                       ->with(['student', 'teacher', 'replies.student', 'replies.teacher'])
+                       ->orderBy('created_at', 'desc');
+                }
+            ]);
         }
 
         if ($request->filled('search')) {
@@ -42,6 +73,7 @@ class MeetController extends Controller
     {
         $validated = $request->validate([
             'course_id'      => 'required|exists:courses,id',
+            'chapter_id'     => 'nullable|exists:chapters,id',
             'meeting_number' => 'required|integer|min:1',
             'title'          => 'required|string|max:255',
             'description'    => 'nullable|string',
@@ -52,7 +84,7 @@ class MeetController extends Controller
         ]);
 
         $meet = Meet::create($validated);
-        $meet->load(['course.subject', 'course.class.className', 'course.teacher']);
+        $meet->load(['course.subject', 'course.class.className', 'course.teacher', 'chapter']);
 
         return response()->json([
             'message' => 'Sesi Pertemuan berhasil dibuat',
@@ -73,6 +105,7 @@ class MeetController extends Controller
             'course.subject', 
             'course.class.className', 
             'course.teacher', 
+            'chapter',
             'materials', 
             'quizzes.submissions' => function ($sq) use ($studentId) {
                 if ($studentId) {
@@ -110,6 +143,7 @@ class MeetController extends Controller
 
         $validated = $request->validate([
             'course_id'      => 'required|exists:courses,id',
+            'chapter_id'     => 'nullable|exists:chapters,id',
             'meeting_number' => 'required|integer|min:1',
             'title'          => 'required|string|max:255',
             'description'    => 'nullable|string',
@@ -120,7 +154,7 @@ class MeetController extends Controller
         ]);
 
         $meet->update($validated);
-        $meet->load(['course.subject', 'course.class.className', 'course.teacher']);
+        $meet->load(['course.subject', 'course.class.className', 'course.teacher', 'chapter']);
 
         return response()->json([
             'message' => 'Sesi Pertemuan berhasil diperbarui',
@@ -136,5 +170,85 @@ class MeetController extends Controller
         return response()->json([
             'message' => 'Sesi Pertemuan berhasil dihapus'
         ]);
+    }
+
+    /**
+     * A1: Duplikasi Pertemuan (Meet) beserta Materi dan Kuis
+     */
+    public function duplicate(Request $request, $id)
+    {
+        $sourceMeet = Meet::with(['course', 'materials', 'quizzes'])->findOrFail($id);
+        $user = $request->user();
+
+        // A5: Otorisasi: hanya admin atau guru pemilik course
+        if (! $user->isAdmin()) {
+            $teacher = $user->teacher;
+            if (! $teacher || $sourceMeet->course->teacher_id !== $teacher->id) {
+                return response()->json(['message' => 'Anda tidak memiliki hak akses untuk menduplikat pertemuan ini.'], 403);
+            }
+        }
+
+        $newMeet = \Illuminate\Support\Facades\DB::transaction(function () use ($sourceMeet) {
+            $maxMeetingNumber = Meet::where('course_id', $sourceMeet->course_id)->max('meeting_number') ?? 0;
+            $newMeetingNumber = $maxMeetingNumber + 1;
+
+            $newMeet = Meet::create([
+                'course_id'      => $sourceMeet->course_id,
+                'meeting_number' => $newMeetingNumber,
+                'title'          => $sourceMeet->title . ' (Salinan)',
+                'description'    => $sourceMeet->description,
+                'type'           => $sourceMeet->type,
+                'meeting_link'   => $sourceMeet->meeting_link,
+                'start_time'     => null,
+                'end_time'       => null,
+            ]);
+
+            // A3: Salin Materi (referensikan file_path yang sama untuk hemat storage)
+            foreach ($sourceMeet->materials as $mat) {
+                \App\Models\Material::create([
+                    'meet_id'      => $newMeet->id,
+                    'title'        => $mat->title,
+                    'type'         => $mat->type,
+                    'content'      => $mat->content,
+                    'file_path'    => $mat->file_path,
+                    'external_url' => $mat->external_url,
+                ]);
+            }
+
+            // Salin Kuis (generate token baru, jangan salin submission)
+            foreach ($sourceMeet->quizzes as $quiz) {
+                $newToken = $quiz->access_token ? strtoupper(\Illuminate\Support\Str::random(6)) : null;
+
+                \App\Models\Quiz::create([
+                    'meet_id'            => $newMeet->id,
+                    'title'              => $quiz->title,
+                    'instructions'       => $quiz->instructions,
+                    'quiz_type'          => $quiz->quiz_type,
+                    'start_time'         => null,
+                    'end_time'           => null,
+                    'due_date'           => null,
+                    'max_score'          => $quiz->max_score,
+                    'duration_minutes'   => $quiz->duration_minutes,
+                    'is_random_question' => $quiz->is_random_question,
+                    'is_random_option'   => $quiz->is_random_option,
+                    'question_bank_id'   => $quiz->question_bank_id,
+                    'questions_data'     => $quiz->questions_data,
+                    'access_token'       => $newToken,
+                    'token_expires_at'   => null,
+                    'available_from'     => null,
+                    'available_until'    => null,
+                    'max_violations'     => $quiz->max_violations,
+                ]);
+            }
+
+            return $newMeet;
+        });
+
+        $newMeet->load(['materials', 'quizzes', 'course.subject', 'course.class.className', 'course.teacher']);
+
+        return response()->json([
+            'message' => 'Pertemuan berhasil diduplikasi.',
+            'data'    => $newMeet
+        ], 201);
     }
 }

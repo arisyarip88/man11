@@ -23,7 +23,23 @@ class Quiz extends Model
         'is_random_option',
         'question_bank_id',
         'questions_data',
+        'access_token',
+        'token_expires_at',
+        'available_from',
+        'available_until',
+        'max_violations',
+        'activity_category',
     ];
+
+    protected $appends = ['questions_count'];
+
+    public function getQuestionsCountAttribute()
+    {
+        if (is_array($this->questions_data)) {
+            return count($this->questions_data);
+        }
+        return 0;
+    }
 
     protected $casts = [
         'is_random_question' => 'boolean',
@@ -32,6 +48,10 @@ class Quiz extends Model
         'start_time'         => 'datetime',
         'end_time'           => 'datetime',
         'due_date'           => 'datetime',
+        'token_expires_at'   => 'datetime',
+        'available_from'     => 'datetime',
+        'available_until'    => 'datetime',
+        'max_violations'     => 'integer',
     ];
 
     public function meet()

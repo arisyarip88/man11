@@ -13,15 +13,35 @@ class DiscussionController extends Controller
     public function index(Request $request)
     {
         $query = Discussion::whereNull('parent_id')
-            ->with(['student', 'teacher', 'replies.student', 'replies.teacher']);
+            ->with(['student', 'teacher', 'replies.student', 'replies.teacher'])
+            ->withCount('replies');
 
         if ($request->filled('meet_id')) {
             $query->where('meet_id', $request->meet_id);
         }
 
+        $perPage = $request->integer('per_page', 20);
+        if ($request->boolean('paginate', false)) {
+            return response()->json(
+                $query->orderBy('created_at', 'desc')->paginate($perPage)
+            );
+        }
+
         $discussions = $query->orderBy('created_at', 'asc')->get();
 
         return response()->json($discussions);
+    }
+
+    public function show($id)
+    {
+        $discussion = Discussion::with([
+            'student', 'teacher', 'meet.course.subject',
+            'replies' => function ($q) {
+                $q->with(['student', 'teacher'])->orderBy('created_at', 'asc');
+            }
+        ])->withCount('replies')->findOrFail($id);
+
+        return response()->json($discussion);
     }
 
     public function store(Request $request)

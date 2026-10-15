@@ -15,4 +15,9 @@ class Schedule extends Model
     {
         return $this->belongsTo(Course::class);
     }
+
+    public function kbmSessions()
+    {
+        return $this->hasMany(KbmSession::class);
+    }
 }

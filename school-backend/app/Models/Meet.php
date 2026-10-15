@@ -9,11 +9,16 @@ class Meet extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['course_id', 'meeting_number', 'title', 'description', 'start_time', 'end_time', 'type', 'meeting_link'];
+    protected $fillable = ['course_id', 'chapter_id', 'meeting_number', 'title', 'description', 'start_time', 'end_time', 'type', 'meeting_link'];
 
     public function course()
     {
         return $this->belongsTo(Course::class);
+    }
+
+    public function chapter()
+    {
+        return $this->belongsTo(Chapter::class);
     }
 
     public function materials()
@@ -29,5 +34,15 @@ class Meet extends Model
     public function discussions()
     {
         return $this->hasMany(Discussion::class);
+    }
+
+    public function attendances()
+    {
+        return $this->hasMany(MeetAttendance::class);
+    }
+
+    public function kbmSessions()
+    {
+        return $this->hasMany(KbmSession::class, 'active_meet_id');
     }
 }

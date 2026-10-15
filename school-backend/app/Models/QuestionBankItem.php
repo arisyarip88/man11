@@ -14,6 +14,7 @@ class QuestionBankItem extends Model
         'type',
         'question',
         'options',
+        'data',
         'correct_answer',
         'explanation',
         'difficulty',
@@ -22,6 +23,7 @@ class QuestionBankItem extends Model
 
     protected $casts = [
         'options' => 'array',
+        'data' => 'array',
         'weight' => 'decimal:2',
     ];
 

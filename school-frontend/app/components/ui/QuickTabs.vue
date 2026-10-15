@@ -27,18 +27,20 @@ const selectTab = (id: string) => {
       v-for="item in items"
       :key="item.id"
       type="button"
-      class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap"
+      class="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap min-h-[40px]"
       :class="modelValue === item.id
         ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80'
         : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'"
       @click="selectTab(item.id)"
     >
-      <span v-if="item.icon" class="text-sm leading-none">{{ item.icon }}</span>
+      <slot name="icon" :item="item">
+        <span v-if="item.icon" class="text-sm leading-none">{{ item.icon }}</span>
+      </slot>
       <span>{{ item.label }}</span>
       <span
         v-if="item.badge !== undefined && item.badge !== null && item.badge !== ''"
-        class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-extrabold"
-        :class="item.badgeColor || (modelValue === item.id ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700')"
+        class="ml-1 px-2 py-0.5 rounded-full text-xs font-extrabold"
+        :class="item.badgeColor || (modelValue === item.id ? 'bg-brand-100 text-brand-950 border border-brand-200' : 'bg-slate-200 text-slate-700')"
       >
         {{ item.badge }}
       </span>

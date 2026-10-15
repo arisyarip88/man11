@@ -50,4 +50,9 @@ class Teacher extends Model
     {
         return $this->hasMany(Course::class, 'teacher_id');
     }
+
+    public function kbmSessions()
+    {
+        return $this->hasMany(KbmSession::class, 'teacher_id');
+    }
 }

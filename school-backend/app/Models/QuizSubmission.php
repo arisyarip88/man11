@@ -15,6 +15,8 @@ class QuizSubmission extends Model
         'started_at',
         'submission_text',
         'answers',
+        'violation_count',
+        'finished_reason',
         'file_path',
         'submitted_at',
         'score',
@@ -25,14 +27,28 @@ class QuizSubmission extends Model
         'status',
     ];
 
+    protected $appends = ['file_url'];
+
+    public function getFileUrlAttribute()
+    {
+        if ($this->file_path) {
+            if (str_starts_with($this->file_path, 'http://') || str_starts_with($this->file_path, 'https://')) {
+                return $this->file_path;
+            }
+            return asset('storage/' . ltrim($this->file_path, '/'));
+        }
+        return null;
+    }
+
     protected $casts = [
-        'answers'      => 'array',
-        'is_graded'    => 'boolean',
-        'started_at'   => 'datetime',
-        'submitted_at' => 'datetime',
-        'score'        => 'decimal:2',
-        'score_pg'     => 'decimal:2',
-        'score_essay'  => 'decimal:2',
+        'answers'         => 'array',
+        'violation_count' => 'integer',
+        'is_graded'       => 'boolean',
+        'started_at'      => 'datetime',
+        'submitted_at'    => 'datetime',
+        'score'           => 'decimal:2',
+        'score_pg'        => 'decimal:2',
+        'score_essay'     => 'decimal:2',
     ];
 
     public function quiz()

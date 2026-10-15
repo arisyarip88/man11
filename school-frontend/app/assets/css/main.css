@@ -1,4 +1,63 @@
-
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-brand-50: #f2fbf5;
+  --color-brand-100: #e1f7e9;
+  --color-brand-200: #c3eed3;
+  --color-brand-300: #a3e3ba;
+  --color-brand-400: #86d9a0;
+  --color-brand-500: #59c27b;
+  --color-brand-600: #3ba560;
+  --color-brand-700: #287843;
+  --color-brand-800: #1b522d;
+  --color-brand-900: #10361c;
+  --color-brand-950: #081e0f;
+
+  /* Aliasing emerald-* to MAN 11 brand palette for total system-wide coherence */
+  --color-emerald-50: #f2fbf5;
+  --color-emerald-100: #e1f7e9;
+  --color-emerald-200: #c3eed3;
+  --color-emerald-300: #a3e3ba;
+  --color-emerald-400: #86d9a0;
+  --color-emerald-500: #59c27b;
+  --color-emerald-600: #3ba560;
+  --color-emerald-700: #287843;
+  --color-emerald-800: #1b522d;
+  --color-emerald-900: #10361c;
+  --color-emerald-950: #081e0f;
+}
+
+:root {
+  --brand-50: #f2fbf5;
+  --brand-100: #e1f7e9;
+  --brand-200: #c3eed3;
+  --brand-300: #a3e3ba;
+  --brand-400: #86d9a0;
+  --brand-500: #59c27b;
+  --brand-600: #3ba560;
+  --brand-700: #287843;
+  --brand-800: #1b522d;
+  --brand-900: #10361c;
+  --brand-950: #081e0f;
+}
+
+/* Accessibility & Human-Centered Standards (Anti-Slop R-32, R-25) */
+html {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Accessible focus outline indicator */
+:focus-visible {
+  outline: 2px solid var(--brand-700);
+  outline-offset: 2px;
+}
+
+/* Minimum Touch Target standard for interactive mobile buttons (Anti-Slop R-03) */
+.min-tap-target {
+  min-height: 44px;
+  min-width: 44px;
+}

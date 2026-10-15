@@ -28,6 +28,9 @@ use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\TeacherJournalController;
 use App\Http\Controllers\Api\SupervisionController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\StudentImportController;
+use App\Http\Controllers\Api\ChapterController;
+use App\Http\Controllers\Api\KbmSessionController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -38,6 +41,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
+
+    // Iterasi 3: Single Device Session Reset
+    Route::post('/users/{id}/reset-sessions', [AuthController::class, 'resetSessions']);
+    Route::post('/students/{id}/reset-session', [StudentController::class, 'resetSession']);
+
+    // Iterasi 3: Import Siswa Template Sekolah
+    Route::get('/students/import/template', [StudentImportController::class, 'downloadTemplate']);
+    Route::post('/students/import', [StudentImportController::class, 'import']);
+    Route::match(['get', 'post'], '/students/import/failed-report', [StudentImportController::class, 'downloadFailedReport']);
 
     Route::apiResource('students', StudentController::class);
     Route::apiResource('teachers', TeacherController::class);
@@ -55,7 +67,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/rombel/{id}/students', [ClassModelController::class, 'attachStudents']);
     Route::delete('/rombel/{id}/students/{studentId}', [ClassModelController::class, 'detachStudent']);
 
+    Route::post('/courses/{id}/duplicate', [CourseController::class, 'duplicate']);
+    Route::get('/courses/{id}/chapters', [ChapterController::class, 'index']);
+    Route::post('/courses/{id}/chapters', [ChapterController::class, 'store']);
+    Route::put('/courses/{courseId}/chapters/{chapterId}', [ChapterController::class, 'update']);
+    Route::delete('/courses/{courseId}/chapters/{chapterId}', [ChapterController::class, 'destroy']);
+    Route::put('/chapters/{id}', [ChapterController::class, 'update']);
+    Route::delete('/chapters/{id}', [ChapterController::class, 'destroy']);
+    Route::post('/courses/{id}/chapters/reorder', [ChapterController::class, 'reorder']);
+    Route::post('/chapters/{id}/assign-meets', [ChapterController::class, 'assignMeets']);
     Route::apiResource('courses', CourseController::class);
+
+    Route::post('/meets/{id}/duplicate', [MeetController::class, 'duplicate']);
     Route::apiResource('meets', MeetController::class);
     Route::apiResource('materials', MaterialController::class);
 
@@ -64,8 +87,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/submissions/{id}/grade', [QuizSubmissionController::class, 'grade']);
     Route::apiResource('submissions', QuizSubmissionController::class)->only(['index']);
 
-    Route::apiResource('discussions', DiscussionController::class)->only(['index', 'store', 'destroy']);
+    Route::apiResource('discussions', DiscussionController::class)->only(['index', 'show', 'store', 'destroy']);
 
+    Route::get('/quizzes/{id}/my-submission', [QuizSubmissionController::class, 'mySubmission']);
+
+    Route::get('/schedules/{id}/current-meet', [ScheduleController::class, 'currentMeet']);
     Route::apiResource('schedules', ScheduleController::class);
 
     Route::get('/scores', [ScoreController::class, 'index']);
@@ -93,10 +119,27 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('teacher-journals', TeacherJournalController::class);
     Route::patch('/teacher-journals/{id}/verify', [TeacherJournalController::class, 'verify']);
 
-    // Phase 4: CBT Asesmen & Buku Nilai Kurikulum Merdeka
+    // Sesi KBM Tatap Muka Terpisah (Decoupled KBM & Attendance)
+    Route::get('/kbm-sessions/active', [KbmSessionController::class, 'active']);
+    Route::get('/kbm-sessions/today', [KbmSessionController::class, 'active']);
+    Route::post('/kbm-sessions/open', [KbmSessionController::class, 'open']);
+    Route::get('/kbm-sessions/{id}', [KbmSessionController::class, 'show']);
+    Route::post('/kbm-sessions/{id}/set-topic', [KbmSessionController::class, 'setTopic']);
+    Route::post('/kbm-sessions/{id}/check-in', [KbmSessionController::class, 'checkIn']);
+    Route::post('/kbm-sessions/{id}/batch-attendance', [KbmSessionController::class, 'batchAttendance']);
+    Route::post('/kbm-sessions/{id}/close', [KbmSessionController::class, 'close']);
+    Route::post('/kbm-sessions/{id}/regenerate-qr', [KbmSessionController::class, 'regenerateQr']);
+    Route::apiResource('kbm-sessions', KbmSessionController::class)->only(['index']);
+
+    // Phase 4 & Iterasi 2: CBT Asesmen, Token Ujian, Layar Fokus & Ujian Aman
+    Route::post('/quizzes/{id}/questions', [QuizController::class, 'updateQuestions']);
     Route::post('/quizzes/{id}/import-bank-items', [CbtController::class, 'importBankItems']);
+    Route::post('/quizzes/{id}/token/regenerate', [CbtController::class, 'regenerateToken']);
+    Route::put('/quizzes/{id}/security-settings', [CbtController::class, 'updateSecuritySettings']);
+    Route::get('/quizzes/{id}/cbt/info', [CbtController::class, 'getExamInfo']);
     Route::post('/quizzes/{id}/cbt/start', [CbtController::class, 'startExam']);
     Route::post('/quizzes/{id}/cbt/save-progress', [CbtController::class, 'saveProgress']);
+    Route::post('/quizzes/{id}/cbt/violation', [CbtController::class, 'recordViolation']);
     Route::post('/quizzes/{id}/cbt/finish', [CbtController::class, 'finishExam']);
     Route::put('/submissions/{id}/grade-cbt', [CbtController::class, 'gradeCbtSubmission']);
 

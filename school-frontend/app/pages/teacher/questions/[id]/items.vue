@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import BackButton from '~/components/ui/BackButton.vue'
 
 definePageMeta({ layout: 'teacher', middleware: 'auth' })
 
@@ -16,12 +17,29 @@ interface OptionItem {
   is_correct: boolean
 }
 
+interface PairItem {
+  id?: string
+  left: string
+  right: string
+}
+
+interface StatementItem {
+  id?: string
+  text: string
+  answer: boolean
+}
+
 interface QuestionItem {
   id: number
   question_bank_id: number
-  type: 'pg' | 'pg_kompleks' | 'esai' | 'isian'
+  type: 'pg' | 'pg_kompleks' | 'isian' | 'menjodohkan' | 'benar_salah' | 'esai'
   question: string
   options: OptionItem[] | null
+  data?: {
+    accepted_answers?: string[]
+    pairs?: PairItem[]
+    statements?: StatementItem[]
+  } | null
   correct_answer: string | null
   explanation: string | null
   difficulty: 'easy' | 'medium' | 'hard'
@@ -43,11 +61,11 @@ const actionLoading = ref(false)
 const bank = ref<QuestionBank | null>(null)
 const items = ref<QuestionItem[]>([])
 
-// Modal State
+// Modal Form State
 const isModalOpen = ref(false)
 const editingId = ref<number | null>(null)
 const form = ref({
-  type: 'pg' as 'pg' | 'pg_kompleks' | 'esai' | 'isian',
+  type: 'pg' as QuestionItem['type'],
   difficulty: 'medium' as 'easy' | 'medium' | 'hard',
   weight: 1.0,
   question: '',
@@ -58,10 +76,24 @@ const form = ref({
     { key: 'D', text: '', is_correct: false },
     { key: 'E', text: '', is_correct: false },
   ] as OptionItem[],
+  accepted_answers: [''] as string[],
+  pairs: [
+    { left: '', right: '' },
+    { left: '', right: '' },
+  ] as PairItem[],
+  statements: [
+    { text: '', answer: true },
+    { text: '', answer: false },
+  ] as StatementItem[],
   correct_answer: '',
   explanation: '',
 })
 const formError = ref('')
+
+// Preview Modal State (F4)
+const isPreviewOpen = ref(false)
+const previewQuestion = ref<any>(null)
+const previewAnswer = ref<any>(null)
 
 const api = async <T>(path: string, options: any = {}) => {
   return await $fetch<T>(`${apiBase}${path}`, {
@@ -108,6 +140,15 @@ const openAddModal = () => {
       { key: 'D', text: '', is_correct: false },
       { key: 'E', text: '', is_correct: false },
     ],
+    accepted_answers: [''],
+    pairs: [
+      { left: '', right: '' },
+      { left: '', right: '' },
+    ],
+    statements: [
+      { text: '', answer: true },
+      { text: '', answer: false },
+    ],
     correct_answer: '',
     explanation: '',
   }
@@ -130,12 +171,27 @@ const openEditModal = (item: QuestionItem) => {
     ]
   }
 
+  const accepted = (item.data?.accepted_answers && item.data.accepted_answers.length > 0)
+    ? [...item.data.accepted_answers]
+    : ['']
+
+  const pairs = (item.data?.pairs && item.data.pairs.length > 0)
+    ? JSON.parse(JSON.stringify(item.data.pairs))
+    : [{ left: '', right: '' }, { left: '', right: '' }]
+
+  const statements = (item.data?.statements && item.data.statements.length > 0)
+    ? JSON.parse(JSON.stringify(item.data.statements))
+    : [{ text: '', answer: true }, { text: '', answer: false }]
+
   form.value = {
     type: item.type,
     difficulty: item.difficulty,
     weight: Number(item.weight) || 1.0,
     question: item.question,
     options: parsedOptions,
+    accepted_answers: accepted,
+    pairs,
+    statements,
     correct_answer: item.correct_answer || '',
     explanation: item.explanation || '',
   }
@@ -150,7 +206,7 @@ const setSingleCorrect = (index: number) => {
   })
 }
 
-// Add/Remove Options
+// Option Helpers for PG
 const addOption = () => {
   const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
   const nextKey = letters[form.value.options.length] || `O${form.value.options.length + 1}`
@@ -162,11 +218,41 @@ const removeOption = (index: number) => {
   form.value.options.splice(index, 1)
 }
 
+// Isian Accepted Answers Helpers
+const addAcceptedAnswer = () => {
+  form.value.accepted_answers.push('')
+}
+const removeAcceptedAnswer = (index: number) => {
+  if (form.value.accepted_answers.length <= 1) return
+  form.value.accepted_answers.splice(index, 1)
+}
+
+// Menjodohkan Pairs Helpers
+const addPair = () => {
+  form.value.pairs.push({ left: '', right: '' })
+}
+const removePair = (index: number) => {
+  if (form.value.pairs.length <= 2) return
+  form.value.pairs.splice(index, 1)
+}
+
+// Benar Salah Statements Helpers
+const addStatement = () => {
+  form.value.statements.push({ text: '', answer: true })
+}
+const removeStatement = (index: number) => {
+  if (form.value.statements.length <= 1) return
+  form.value.statements.splice(index, 1)
+}
+
 const saveItem = async () => {
-  if (!form.value.question) {
+  if (!form.value.question.trim()) {
     formError.value = 'Pertanyaan tidak boleh kosong.'
     return
   }
+
+  let payloadData: any = null
+  let payloadOptions: any = null
 
   if (form.value.type === 'pg' || form.value.type === 'pg_kompleks') {
     const hasCorrect = form.value.options.some(opt => opt.is_correct)
@@ -179,6 +265,40 @@ const saveItem = async () => {
       formError.value = 'Teks semua pilihan jawaban harus diisi.'
       return
     }
+    payloadOptions = form.value.options
+  } else if (form.value.type === 'isian') {
+    const validAccepted = form.value.accepted_answers.map(a => a.trim()).filter(Boolean)
+    if (validAccepted.length === 0) {
+      formError.value = 'Tuliskan minimal 1 alternatif kunci jawaban isian yang diterima.'
+      return
+    }
+    payloadData = { accepted_answers: validAccepted }
+  } else if (form.value.type === 'menjodohkan') {
+    const validPairs = form.value.pairs.filter(p => p.left.trim() && p.right.trim())
+    if (validPairs.length < 2) {
+      formError.value = 'Soal menjodohkan membutuhkan minimal 2 pasang pernyataan lengkap.'
+      return
+    }
+    payloadData = {
+      pairs: validPairs.map((p, idx) => ({
+        id: String(idx + 1),
+        left: p.left.trim(),
+        right: p.right.trim(),
+      }))
+    }
+  } else if (form.value.type === 'benar_salah') {
+    const validStatements = form.value.statements.filter(s => s.text.trim())
+    if (validStatements.length < 1) {
+      formError.value = 'Soal Benar/Salah membutuhkan minimal 1 pernyataan.'
+      return
+    }
+    payloadData = {
+      statements: validStatements.map((s, idx) => ({
+        id: String(idx + 1),
+        text: s.text.trim(),
+        answer: Boolean(s.answer),
+      }))
+    }
   }
 
   actionLoading.value = true
@@ -190,8 +310,9 @@ const saveItem = async () => {
       question: form.value.question,
       difficulty: form.value.difficulty,
       weight: form.value.weight,
-      options: (form.value.type === 'pg' || form.value.type === 'pg_kompleks') ? form.value.options : null,
-      correct_answer: (form.value.type === 'esai' || form.value.type === 'isian') ? form.value.correct_answer : null,
+      options: payloadOptions,
+      data: payloadData,
+      correct_answer: form.value.type === 'esai' ? form.value.correct_answer : null,
       explanation: form.value.explanation || null,
     }
 
@@ -226,6 +347,46 @@ const deleteItem = async (itemId: number) => {
   }
 }
 
+// Pratinjau Siswa (F4)
+const openPreview = (item: QuestionItem, index: number) => {
+  previewAnswer.value = null
+  let sanitizedItem: any = {
+    number: index + 1,
+    type: item.type,
+    question: item.question,
+    weight: item.weight,
+    difficulty: item.difficulty,
+    explanation: item.explanation,
+    raw: item,
+  }
+
+  if (item.type === 'pg' || item.type === 'pg_kompleks') {
+    sanitizedItem.options = (item.options || []).map(o => ({ key: o.key, text: o.text }))
+  } else if (item.type === 'menjodohkan') {
+    const pairs = item.data?.pairs || []
+    sanitizedItem.pairs = pairs.map(p => ({ id: p.id || '1', left: p.left }))
+    // Acak pilihan kanan untuk simulasi siswa
+    const choices = [...pairs.map(p => p.right)].sort(() => Math.random() - 0.5)
+    sanitizedItem.choices = choices
+  } else if (item.type === 'benar_salah') {
+    sanitizedItem.statements = (item.data?.statements || []).map(s => ({ id: s.id || '1', text: s.text }))
+  }
+
+  previewQuestion.value = sanitizedItem
+  isPreviewOpen.value = true
+}
+
+const answerComponent = (type: string) => {
+  switch (type) {
+    case 'pg': return resolveComponent('ExamAnswerPg')
+    case 'pg_kompleks': return resolveComponent('ExamAnswerPgKompleks')
+    case 'isian': return resolveComponent('ExamAnswerIsian')
+    case 'menjodohkan': return resolveComponent('ExamAnswerMenjodohkan')
+    case 'benar_salah': return resolveComponent('ExamAnswerBenarSalah')
+    default: return resolveComponent('ExamAnswerEsai')
+  }
+}
+
 const getDifficultyBadge = (diff: string) => {
   switch (diff) {
     case 'easy':
@@ -237,13 +398,15 @@ const getDifficultyBadge = (diff: string) => {
   }
 }
 
-const getTypeLabel = (type: string) => {
+const getTypeBadge = (type: string) => {
   switch (type) {
-    case 'pg': return 'Pilihan Ganda'
-    case 'pg_kompleks': return 'PG Kompleks'
-    case 'esai': return 'Esai'
-    case 'isian': return 'Isian Singkat'
-    default: return type
+    case 'pg': return { label: 'Pilihan Ganda', color: 'bg-blue-50 text-blue-700 border-blue-200' }
+    case 'pg_kompleks': return { label: 'PG Kompleks', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' }
+    case 'isian': return { label: 'Isian Singkat', color: 'bg-amber-50 text-amber-800 border-amber-200' }
+    case 'menjodohkan': return { label: 'Menjodohkan', color: 'bg-purple-50 text-purple-700 border-purple-200' }
+    case 'benar_salah': return { label: 'Benar / Salah', color: 'bg-teal-50 text-teal-800 border-teal-200' }
+    case 'esai': return { label: 'Esai / Uraian', color: 'bg-slate-100 text-slate-700 border-slate-200' }
+    default: return { label: type, color: 'bg-slate-100 text-slate-700 border-slate-200' }
   }
 }
 </script>
@@ -252,15 +415,7 @@ const getTypeLabel = (type: string) => {
   <div class="space-y-6">
     <!-- Back Button & Breadcrumbs -->
     <div class="flex items-center gap-2">
-      <NuxtLink
-        to="/teacher/questions/bank"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-emerald-700 transition"
-      >
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
-        Kembali ke Bank Soal
-      </NuxtLink>
+      <BackButton fallback="/teacher/questions/bank" label="Kembali ke Bank Soal" />
       <span class="text-slate-300">/</span>
       <span class="text-xs font-semibold text-slate-500">Kelola Butir Soal</span>
     </div>
@@ -316,7 +471,7 @@ const getTypeLabel = (type: string) => {
       </div>
       <h3 class="text-sm font-bold text-slate-800">Paket soal ini masih kosong</h3>
       <p class="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-        Mulai tambahkan butir-butir pertanyaan pilihan ganda, PG kompleks, atau esai.
+        Mulai tambahkan butir-butir pertanyaan PG, PG Kompleks, Isian Singkat, Menjodohkan, atau Benar/Salah.
       </p>
       <button
         @click="openAddModal"
@@ -326,7 +481,7 @@ const getTypeLabel = (type: string) => {
       </button>
     </div>
 
-    <!-- Questions Accordion / List -->
+    <!-- Questions List -->
     <div v-else class="space-y-4">
       <div
         v-for="(item, index) in items"
@@ -339,8 +494,8 @@ const getTypeLabel = (type: string) => {
             <span class="w-7 h-7 rounded-xl bg-emerald-600 text-white font-extrabold text-xs flex items-center justify-center shadow-xs">
               {{ index + 1 }}
             </span>
-            <span class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
-              {{ getTypeLabel(item.type) }}
+            <span :class="['text-xs font-bold px-2.5 py-0.5 rounded-full border', getTypeBadge(item.type).color]">
+              {{ getTypeBadge(item.type).label }}
             </span>
             <span :class="['text-[10px] font-bold px-2 py-0.5 rounded-full border', getDifficultyBadge(item.difficulty).bg]">
               {{ getDifficultyBadge(item.difficulty).label }}
@@ -350,7 +505,21 @@ const getTypeLabel = (type: string) => {
             </span>
           </div>
 
-          <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1.5">
+            <!-- Pratinjau Button (F4) -->
+            <button
+              @click="openPreview(item, index)"
+              class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 transition"
+              title="Pratinjau Tampilan Siswa"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              <span>Pratinjau</span>
+            </button>
+
+            <!-- Edit Button -->
             <button
               @click="openEditModal(item)"
               class="p-2 rounded-xl text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition"
@@ -360,6 +529,8 @@ const getTypeLabel = (type: string) => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
             </button>
+
+            <!-- Delete Button -->
             <button
               @click="deleteItem(item.id)"
               class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
@@ -377,7 +548,8 @@ const getTypeLabel = (type: string) => {
           {{ item.question }}
         </div>
 
-        <!-- Options for PG / PG Kompleks -->
+        <!-- Render Content Berdasarkan Tipe -->
+        <!-- 1. PG & PG Kompleks -->
         <div v-if="(item.type === 'pg' || item.type === 'pg_kompleks') && item.options" class="grid gap-2 text-xs">
           <div
             v-for="opt in item.options"
@@ -406,10 +578,65 @@ const getTypeLabel = (type: string) => {
           </div>
         </div>
 
-        <!-- Rubrik Jawaban jika Esai -->
-        <div v-if="item.correct_answer && (item.type === 'esai' || item.type === 'isian')" class="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 text-xs">
-          <span class="font-extrabold text-amber-900 block mb-0.5">Panduan Kunci Jawaban / Rubrik Penskoran:</span>
-          <p class="text-amber-800 leading-relaxed">{{ item.correct_answer }}</p>
+        <!-- 2. Isian Singkat -->
+        <div v-else-if="item.type === 'isian'" class="p-3.5 rounded-2xl bg-amber-50/60 border border-amber-200 text-xs space-y-1.5">
+          <span class="font-extrabold text-amber-900 block">Kunci Jawaban Singkat yang Diterima (Otomatis Dinilai):</span>
+          <div class="flex flex-wrap gap-1.5">
+            <span
+              v-for="ans in (item.data?.accepted_answers || [])"
+              :key="ans"
+              class="px-2.5 py-1 rounded-xl bg-white border border-amber-300 font-mono font-bold text-amber-950 text-xs shadow-2xs"
+            >
+              "{{ ans }}"
+            </span>
+            <span v-if="!item.data?.accepted_answers?.length" class="text-slate-400 italic">
+              Belum ada kunci jawaban.
+            </span>
+          </div>
+        </div>
+
+        <!-- 3. Menjodohkan -->
+        <div v-else-if="item.type === 'menjodohkan'" class="p-3.5 rounded-2xl bg-purple-50/50 border border-purple-200 text-xs space-y-2">
+          <span class="font-extrabold text-purple-900 block">Kunci Pasangan Menjodohkan (Kiri ↔ Kanan):</span>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div
+              v-for="pair in (item.data?.pairs || [])"
+              :key="pair.id"
+              class="p-2.5 rounded-xl bg-white border border-purple-200 flex items-center justify-between gap-2 shadow-2xs"
+            >
+              <span class="font-semibold text-slate-800">{{ pair.left }}</span>
+              <span class="text-purple-600 font-extrabold">↔</span>
+              <span class="font-bold text-purple-950 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200">{{ pair.right }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Benar / Salah -->
+        <div v-else-if="item.type === 'benar_salah'" class="p-3.5 rounded-2xl bg-teal-50/50 border border-teal-200 text-xs space-y-2">
+          <span class="font-extrabold text-teal-900 block">Pernyataan & Kunci Benar/Salah:</span>
+          <div class="space-y-1.5">
+            <div
+              v-for="st in (item.data?.statements || [])"
+              :key="st.id"
+              class="p-2.5 rounded-xl bg-white border border-teal-200 flex items-center justify-between gap-3 shadow-2xs"
+            >
+              <span class="font-medium text-slate-800">{{ st.text }}</span>
+              <span
+                :class="[
+                  'px-2.5 py-0.5 rounded-lg font-extrabold text-[11px] shrink-0',
+                  st.answer ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
+                ]"
+              >
+                {{ st.answer ? 'BENAR' : 'SALAH' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Esai -->
+        <div v-else-if="item.type === 'esai' && item.correct_answer" class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
+          <span class="font-extrabold text-slate-800 block mb-0.5">Panduan Penskoran / Rubrik Esai:</span>
+          <p class="text-slate-700 leading-relaxed">{{ item.correct_answer }}</p>
         </div>
 
         <!-- Pembahasan Soal -->
@@ -420,7 +647,7 @@ const getTypeLabel = (type: string) => {
       </div>
     </div>
 
-    <!-- Modal Form Tambah / Edit Butir Soal -->
+    <!-- Modal Form Tambah / Edit Butir Soal (F1) -->
     <div
       v-if="isModalOpen"
       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in"
@@ -437,24 +664,26 @@ const getTypeLabel = (type: string) => {
           </button>
         </div>
 
-        <div v-if="formError" class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+        <div v-if="formError" class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">
           {{ formError }}
         </div>
 
         <form @submit.prevent="saveItem" class="flex-1 overflow-y-auto space-y-4 text-xs pr-1">
-          <!-- Tipe Soal & Kesulitan -->
+          <!-- Tipe Soal, Kesulitan, Bobot -->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="block font-bold text-slate-700 mb-1">Tipe Soal *</label>
               <select
                 v-model="form.type"
                 required
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="pg">Pilihan Ganda (Tunggal)</option>
                 <option value="pg_kompleks">Pilihan Ganda Kompleks</option>
-                <option value="esai">Esai / Uraian</option>
-                <option value="isian">Isian Singkat</option>
+                <option value="isian">Isian Singkat (Auto-grade)</option>
+                <option value="menjodohkan">Menjodohkan (Pairs)</option>
+                <option value="benar_salah">Benar / Salah</option>
+                <option value="esai">Esai / Uraian (Manual)</option>
               </select>
             </div>
 
@@ -479,7 +708,7 @@ const getTypeLabel = (type: string) => {
                 step="0.5"
                 min="0.5"
                 required
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono font-bold"
               />
             </div>
           </div>
@@ -489,20 +718,20 @@ const getTypeLabel = (type: string) => {
             <label class="block font-bold text-slate-700 mb-1">Teks Pertanyaan *</label>
             <textarea
               v-model="form.question"
-              rows="4"
-              placeholder="Tuliskan soal atau studi kasus pertanyaan di sini..."
+              rows="3"
+              placeholder="Tuliskan soal atau petunjuk pertanyaan di sini..."
               required
-              class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
             ></textarea>
           </div>
 
-          <!-- Options Builder for PG / PG Kompleks -->
+          <!-- 1. Builder untuk PG / PG Kompleks -->
           <div v-if="form.type === 'pg' || form.type === 'pg_kompleks'" class="space-y-2">
             <div class="flex items-center justify-between">
               <label class="block font-bold text-slate-700">
                 Pilihan Jawaban & Kunci Jawaban Benar *
                 <span class="text-[10px] font-normal text-slate-400 block">
-                  {{ form.type === 'pg' ? 'Klik radio button pada opsi yang merupakan kunci jawaban benar' : 'Centang kotak untuk semua jawaban yang benar' }}
+                  {{ form.type === 'pg' ? 'Pilih satu radio button sebagai kunci jawaban benar' : 'Centang semua kotak jawaban yang benar' }}
                 </span>
               </label>
               <button
@@ -527,15 +756,15 @@ const getTypeLabel = (type: string) => {
                   name="correct_answer_radio"
                   :checked="opt.is_correct"
                   @change="setSingleCorrect(idx)"
-                  class="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-slate-300 ml-1"
-                  title="Pilih sebagai kunci jawaban benar"
+                  class="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-slate-300 ml-1 cursor-pointer"
+                  title="Pilih sebagai kunci benar"
                 />
                 <!-- Checkbox for PG Kompleks -->
                 <input
                   v-else
                   type="checkbox"
                   v-model="opt.is_correct"
-                  class="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 border-slate-300 ml-1"
+                  class="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 border-slate-300 ml-1 cursor-pointer"
                   title="Centang jika opsi ini benar"
                 />
 
@@ -561,15 +790,189 @@ const getTypeLabel = (type: string) => {
             </div>
           </div>
 
-          <!-- Kunci Jawaban untuk Esai -->
-          <div v-if="form.type === 'esai' || form.type === 'isian'">
+          <!-- 2. Builder untuk Isian Singkat -->
+          <div v-else-if="form.type === 'isian'" class="space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="block font-bold text-slate-700">
+                Alternatif Kunci Jawaban yang Diterima *
+                <span class="text-[10px] font-normal text-slate-400 block">
+                  Penilaian otomatis bersifat tidak sensitif huruf besar/kecil (case-insensitive). Tambahkan variasi penulisan yang sah.
+                </span>
+              </label>
+              <button
+                type="button"
+                @click="addAcceptedAnswer"
+                class="text-[11px] font-bold text-emerald-700 hover:underline"
+              >
+                + Tambah Alternatif
+              </button>
+            </div>
+
+            <div class="space-y-2">
+              <div
+                v-for="(ans, idx) in form.accepted_answers"
+                :key="idx"
+                class="flex items-center gap-2"
+              >
+                <span class="text-xs font-mono font-bold text-slate-400 w-5 text-right">{{ idx + 1 }}.</span>
+                <input
+                  v-model="form.accepted_answers[idx]"
+                  type="text"
+                  placeholder="Contoh: fotosintesis atau foto sintesis"
+                  required
+                  class="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                />
+                <button
+                  type="button"
+                  @click="removeAcceptedAnswer(idx)"
+                  v-if="form.accepted_answers.length > 1"
+                  class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                  title="Hapus variasi"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Builder untuk Menjodohkan -->
+          <div v-else-if="form.type === 'menjodohkan'" class="space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="block font-bold text-slate-700">
+                Daftar Pasangan Menjodohkan (Minimal 2 pasang) *
+                <span class="text-[10px] font-normal text-slate-400 block">
+                  Pilihan kanan akan otomatis diacak saat ujian siswa dimulai.
+                </span>
+              </label>
+              <button
+                type="button"
+                @click="addPair"
+                class="text-[11px] font-bold text-emerald-700 hover:underline"
+              >
+                + Tambah Pasangan
+              </button>
+            </div>
+
+            <div class="space-y-2">
+              <div
+                v-for="(pair, idx) in form.pairs"
+                :key="idx"
+                class="grid grid-cols-1 sm:grid-cols-11 gap-2 items-center p-2.5 rounded-2xl border border-slate-200 bg-slate-50/50"
+              >
+                <div class="sm:col-span-5">
+                  <input
+                    v-model="pair.left"
+                    type="text"
+                    placeholder="Pernyataan Kiri (Premis)"
+                    required
+                    class="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div class="sm:col-span-1 text-center font-bold text-purple-600 text-xs">
+                  ↔
+                </div>
+                <div class="sm:col-span-4">
+                  <input
+                    v-model="pair.right"
+                    type="text"
+                    placeholder="Jawaban Kanan yang Benar"
+                    required
+                    class="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div class="sm:col-span-1 text-right">
+                  <button
+                    type="button"
+                    @click="removePair(idx)"
+                    v-if="form.pairs.length > 2"
+                    class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                    title="Hapus baris pasangan"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Builder untuk Benar / Salah -->
+          <div v-else-if="form.type === 'benar_salah'" class="space-y-2">
+            <div class="flex items-center justify-between">
+              <label class="block font-bold text-slate-700">
+                Daftar Pernyataan & Kunci Kebenaran *
+                <span class="text-[10px] font-normal text-slate-400 block">
+                  Tentukan apakah pernyataan berikut Benar (True) atau Salah (False).
+                </span>
+              </label>
+              <button
+                type="button"
+                @click="addStatement"
+                class="text-[11px] font-bold text-emerald-700 hover:underline"
+              >
+                + Tambah Pernyataan
+              </button>
+            </div>
+
+            <div class="space-y-2">
+              <div
+                v-for="(st, idx) in form.statements"
+                :key="idx"
+                class="flex items-center gap-2 p-2.5 rounded-2xl border border-slate-200 bg-slate-50/50"
+              >
+                <span class="text-xs font-mono font-bold text-slate-400 w-5 text-right">{{ idx + 1 }}.</span>
+                <input
+                  v-model="st.text"
+                  type="text"
+                  placeholder="Ketik kalimat pernyataan di sini..."
+                  required
+                  class="flex-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                
+                <div class="flex items-center gap-1 shrink-0 bg-white p-1 rounded-xl border border-slate-200">
+                  <button
+                    type="button"
+                    @click="st.answer = true"
+                    :class="[
+                      'px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition',
+                      st.answer ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    ]"
+                  >
+                    BENAR
+                  </button>
+                  <button
+                    type="button"
+                    @click="st.answer = false"
+                    :class="[
+                      'px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition',
+                      !st.answer ? 'bg-rose-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    ]"
+                  >
+                    SALAH
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  @click="removeStatement(idx)"
+                  v-if="form.statements.length > 1"
+                  class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                  title="Hapus pernyataan"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. Kunci / Panduan untuk Esai -->
+          <div v-else-if="form.type === 'esai'">
             <label class="block font-bold text-slate-700 mb-1">
-              {{ form.type === 'esai' ? 'Panduan Penskoran / Kata Kunci Esai' : 'Kunci Jawaban Singkat' }}
+              Panduan Penskoran / Kata Kunci Esai (Koreksi Manual)
             </label>
             <textarea
               v-model="form.correct_answer"
               rows="2"
-              placeholder="Tuliskan kata kunci atau panduan penilaian bagi guru/korektor..."
+              placeholder="Tuliskan kata kunci atau kriteria rubrik bagi guru penilai..."
               class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             ></textarea>
           </div>
@@ -580,7 +983,7 @@ const getTypeLabel = (type: string) => {
             <textarea
               v-model="form.explanation"
               rows="2"
-              placeholder="Penjelasan langkah penyelesaian untuk ditampilkan saat review hasil ujian..."
+              placeholder="Penjelasan langkah penyelesaian untuk ditampilkan saat review evaluasi..."
               class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             ></textarea>
           </div>
@@ -603,6 +1006,107 @@ const getTypeLabel = (type: string) => {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Modal Pratinjau Tampilan Siswa (F4) -->
+    <div
+      v-if="isPreviewOpen && previewQuestion"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+    >
+      <div class="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 font-extrabold text-xs">
+              Simulasi Siswa CBT
+            </span>
+            <span :class="['text-xs font-bold px-2 py-0.5 rounded-full border', getTypeBadge(previewQuestion.type).color]">
+              {{ getTypeBadge(previewQuestion.type).label }}
+            </span>
+          </div>
+          <button @click="isPreviewOpen = false" class="text-slate-400 hover:text-slate-600">
+            ✕
+          </button>
+        </div>
+
+        <!-- Bagian Pertanyaan Siswa -->
+        <div class="bg-slate-50/70 p-5 rounded-2xl border border-slate-200/80 space-y-4">
+          <div class="flex items-center justify-between">
+            <span class="font-extrabold text-xs text-slate-700">Soal Nomor {{ previewQuestion.number }}</span>
+            <span class="text-xs text-slate-400 font-semibold">Bobot: {{ previewQuestion.weight }} Poin</span>
+          </div>
+          <p class="text-sm font-semibold text-slate-900 whitespace-pre-wrap leading-relaxed">
+            {{ previewQuestion.question }}
+          </p>
+
+          <!-- Render Komponen Siswa yang Sama Persis -->
+          <component
+            :is="answerComponent(previewQuestion.type)"
+            :question="previewQuestion"
+            v-model="previewAnswer"
+          />
+        </div>
+
+        <!-- Verifikasi Kunci Jawaban (Khusus Guru) -->
+        <div class="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-2 text-xs">
+          <div class="flex items-center gap-1.5 font-extrabold text-emerald-900">
+            <span>✓</span>
+            <span>Kunci Jawaban & Panduan Guru (Disembunyikan dari Siswa saat Ujian):</span>
+          </div>
+
+          <div v-if="previewQuestion.raw.type === 'pg' || previewQuestion.raw.type === 'pg_kompleks'">
+            <div class="flex flex-wrap gap-2 mt-1">
+              <span
+                v-for="opt in previewQuestion.raw.options.filter((o: any) => o.is_correct)"
+                :key="opt.key"
+                class="px-2 py-0.5 rounded-md bg-emerald-200 text-emerald-900 font-bold"
+              >
+                {{ opt.key }}: {{ opt.text }}
+              </span>
+            </div>
+          </div>
+          <div v-else-if="previewQuestion.raw.type === 'isian'">
+            <div class="flex flex-wrap gap-1 mt-1">
+              <span
+                v-for="ans in (previewQuestion.raw.data?.accepted_answers || [])"
+                :key="ans"
+                class="px-2 py-0.5 rounded-md bg-emerald-200 text-emerald-900 font-mono font-bold"
+              >
+                "{{ ans }}"
+              </span>
+            </div>
+          </div>
+          <div v-else-if="previewQuestion.raw.type === 'menjodohkan'">
+            <ul class="list-disc pl-4 space-y-0.5 text-emerald-950 font-medium">
+              <li v-for="pair in (previewQuestion.raw.data?.pairs || [])" :key="pair.id">
+                <b>{{ pair.left }}</b> ↔ {{ pair.right }}
+              </li>
+            </ul>
+          </div>
+          <div v-else-if="previewQuestion.raw.type === 'benar_salah'">
+            <ul class="list-disc pl-4 space-y-0.5 text-emerald-950 font-medium">
+              <li v-for="st in (previewQuestion.raw.data?.statements || [])" :key="st.id">
+                {{ st.text }} → <b>{{ st.answer ? 'BENAR' : 'SALAH' }}</b>
+              </li>
+            </ul>
+          </div>
+          <div v-else-if="previewQuestion.raw.type === 'esai' && previewQuestion.raw.correct_answer">
+            <p class="text-emerald-900 font-medium">{{ previewQuestion.raw.correct_answer }}</p>
+          </div>
+
+          <div v-if="previewQuestion.explanation" class="pt-2 border-t border-emerald-200/80 text-[11px] text-emerald-800">
+            <b>Pembahasan:</b> {{ previewQuestion.explanation }}
+          </div>
+        </div>
+
+        <div class="flex justify-end">
+          <button
+            @click="isPreviewOpen = false"
+            class="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800"
+          >
+            Tutup Pratinjau
+          </button>
+        </div>
       </div>
     </div>
   </div>

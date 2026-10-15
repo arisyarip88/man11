@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
-  modelValue: boolean
+  modelValue?: boolean
+  open?: boolean
   title?: string
   subtitle?: string
   width?: string
 }>(), {
   modelValue: false,
+  open: undefined,
   title: '',
   subtitle: '',
   width: 'max-w-xl'
@@ -15,23 +17,30 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
+  (e: 'update:open', value: boolean): void
   (e: 'close'): void
 }>()
 
+const isOpen = computed(() => {
+  if (props.open !== undefined) return props.open
+  return props.modelValue ?? false
+})
+
 const close = () => {
   emit('update:modelValue', false)
+  emit('update:open', false)
   emit('close')
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && props.modelValue) {
+  if (e.key === 'Escape' && isOpen.value) {
     close()
   }
 }
 
-watch(() => props.modelValue, (isOpen) => {
+watch(isOpen, (val) => {
   if (typeof document !== 'undefined') {
-    if (isOpen) {
+    if (val) {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = ''
@@ -56,7 +65,7 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <div
-      v-if="modelValue"
+      v-if="isOpen"
       class="fixed inset-0 z-50 overflow-hidden"
       role="dialog"
       aria-modal="true"
