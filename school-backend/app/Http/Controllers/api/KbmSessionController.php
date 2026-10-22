@@ -411,95 +411,16 @@ class KbmSessionController extends Controller
     }
 
     /**
-     * Siswa Presensi Mandiri (1-Click Hadir atau Scan QR Proyektor)
+     * Siswa Presensi Mandiri (Dinonaktifkan - Presensi dikelola penuh oleh guru)
      */
     public function checkIn(Request $request, $id)
     {
-        $session = KbmSession::with('course.class.students')->findOrFail($id);
-
-        if ($session->status !== 'open') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Sesi KBM ini belum dibuka atau sudah ditutup oleh guru.',
-            ], 422);
-        }
-
-        $student = $this->resolveStudent($request);
-        if (!$student) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Akun siswa tidak terautentikasi.',
-            ], 403);
-        }
-
-        // Pastikan siswa terdaftar di rombel kelas mapel ini
-        $isEnrolled = $session->course?->class?->students->contains('id', $student->id);
-        if (!$isEnrolled) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Anda tidak terdaftar sebagai siswa di rombel kelas ini.',
-            ], 403);
-        }
-
-        $method = $request->input('method', 'self_click');
-
-        if ($method === 'qr_scan') {
-            $qrToken = $request->input('qr_token');
-            $timeSlot = $request->input('time_slot');
-
-            $isValid = false;
-            // 1. Validasi token sesi atau payload
-            if (!empty($qrToken) && $qrToken === $session->qr_token) {
-                $isValid = true;
-            }
-
-            // 2. Validasi dynamic 15-minute window tanpa simpan DB
-            if (!$isValid && !empty($timeSlot)) {
-                $currentSlot = (int) floor(time() / 900); // 15 menit per slot
-                if (in_array((int) $timeSlot, [$currentSlot, $currentSlot - 1])) {
-                    $isValid = true;
-                }
-            }
-
-            if (!$isValid) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'QR Code tidak valid atau sudah kedaluwarsa (>15 menit). Silakan scan QR terbaru di proyektor.',
-                ], 422);
-            }
-        } else {
-            // Self click
-            if (!$session->allow_self_checkin) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Presensi mandiri 1-klik dinonaktifkan guru. Silakan scan QR code proyektor di kelas.',
-                ], 422);
-            }
-        }
-
-        $attendance = SessionAttendance::updateOrCreate(
-            [
-                'session_id' => $session->id,
-                'student_id' => $student->id,
-            ],
-            [
-                'status'     => 'H',
-                'method'     => $method,
-                'notes'      => $request->input('notes'),
-                'checkin_at' => now(),
-            ]
-        );
-
         return response()->json([
-            'success' => true,
-            'message' => 'Presensi berhasil dicatat! Status: Hadir.',
-            'data'    => [
-                'attendance'   => $attendance,
-                'student_name' => $student->name,
-                'session_id'   => $session->id,
-            ]
-        ]);
+            'success' => false,
+            'message' => 'Fitur presensi mandiri siswa telah dinonaktifkan. Kehadiran siswa dicatat langsung oleh guru di kelas.',
+        ], 403);
     }
+
 
     /**
      * Guru Bulk Attendance (1-Tap Hadirkan Semua atau Update Massal H/S/I/A)

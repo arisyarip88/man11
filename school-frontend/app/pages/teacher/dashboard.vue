@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AppButton from '~/components/ui/AppButton.vue'
 import AppBadge from '~/components/ui/AppBadge.vue'
 import AppCard from '~/components/ui/AppCard.vue'
@@ -44,7 +44,59 @@ const teacherNip = computed(() => user.value?.teacher?.nip || user.value?.userna
 const subjectName = (course: any) => course?.subject?.name || 'Mata Pelajaran'
 const className = (course: any) => course?.class?.class_name?.name || course?.class?.className?.name || 'Kelas'
 
+// Multi-subject grouping to prevent Cognitive Overload & UX Bloat
+const selectedSubjectFilter = ref<string>('all')
+
+// Realtime "Now-Teaching" Indicator
+const currentMinutes = ref(0)
+let timeWatcherInterval: any = null
+
+const updateCurrentMinutes = () => {
+  const now = new Date()
+  currentMinutes.value = now.getHours() * 60 + now.getMinutes()
+}
+
+const parseTimeToMinutes = (timeStr?: string) => {
+  if (!timeStr) return 0
+  const parts = timeStr.split(':').map(Number)
+  return (parts[0] || 0) * 60 + (parts[1] || 0)
+}
+
+const getTimingStatus = (startTime?: string, endTime?: string): 'active' | 'passed' | 'upcoming' => {
+  if (!startTime || !endTime) return 'upcoming'
+  const start = parseTimeToMinutes(startTime)
+  const end = parseTimeToMinutes(endTime)
+  if (currentMinutes.value >= start && currentMinutes.value <= end) return 'active'
+  if (currentMinutes.value > end) return 'passed'
+  return 'upcoming'
+}
+
+const distinctSubjects = computed(() => {
+  const set = new Set<string>()
+  courses.value.forEach(c => {
+    const sName = c.subject?.name
+    if (sName) set.add(sName)
+  })
+  return Array.from(set)
+})
+
+const filteredTodaySchedules = computed(() => {
+  if (selectedSubjectFilter.value === 'all') return todaySchedules.value
+  return todaySchedules.value.filter(s => subjectName(s.course) === selectedSubjectFilter.value)
+})
+
+const filteredCourses = computed(() => {
+  if (selectedSubjectFilter.value === 'all') return courses.value
+  return courses.value.filter(c => subjectName(c) === selectedSubjectFilter.value)
+})
+
+// Quick attendance modal/sheet helper for non-today courses
+const isOtherClassSelectorOpen = ref(false)
+
 onMounted(async () => {
+  updateCurrentMinutes()
+  timeWatcherInterval = setInterval(updateCurrentMinutes, 30000)
+
   try {
     const [scheduleResponse, courseResponse, quizResponse, semesterResponse] = await Promise.all([
       api<any>('/schedules?my_schedules=true&all=true&with_current_meet=true').catch(() => []),
@@ -62,14 +114,8 @@ onMounted(async () => {
       activeSemester.value = semestersList.find((s: any) => s.is_active) || semestersList[0]
     }
 
-    const details = await Promise.all(
-      courses.value.map(course => api<any>(`/courses/${course.id}`).catch(() => null))
-    )
-    const quizIds = new Set(
-      details
-        .filter(Boolean)
-        .flatMap(course => (course?.meets || []).flatMap((meet: any) => (meet.quizzes || []).map((quiz: any) => quiz.id)))
-    )
+    // Eliminasi N+1: quizzes sudah di-fetch langsung untuk guru pengampu
+    const quizIds = new Set(quizzes.value.map((quiz: any) => quiz.id))
     const submissions = list(await api<any>('/submissions').catch(() => []))
     pendingSubmissions.value = submissions.filter((item: any) => quizIds.has(item.quiz_id) && item.status !== 'graded')
   } catch (error) {
@@ -78,46 +124,30 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+onUnmounted(() => {
+  if (timeWatcherInterval) {
+    clearInterval(timeWatcherInterval)
+    timeWatcherInterval = null
+  }
+})
 </script>
 
 <template>
   <div class="min-h-screen bg-slate-50 pb-16 font-sans text-slate-800">
-    <!-- Top Header Navigation -->
-    <header class="sticky top-0 z-30 border-b border-slate-200 bg-white shadow-xs">
-      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <NuxtLink to="/teacher/dashboard" class="flex items-center gap-3">
-          <img src="/logo.png" alt="Logo MAN 11 Jakarta" class="h-10 w-10 object-contain" />
-          <div>
-            <span class="block font-black text-slate-900 tracking-tight leading-none text-base">Ruang Guru</span>
-            <span class="text-[11px] font-semibold text-emerald-700">MAN 11 Jakarta LMS</span>
-          </div>
-        </NuxtLink>
-
-        <div class="flex items-center gap-3">
-          <div class="hidden text-right text-xs sm:block">
-            <b class="block text-slate-900 font-bold">{{ teacherName }}</b>
-            <span class="text-slate-400 font-mono text-[11px]">NIP: {{ teacherNip }}</span>
-          </div>
-          <AppButton @click="logout" variant="ghost" size="sm" class="text-slate-600 hover:text-rose-600">
-            Keluar
-          </AppButton>
-        </div>
-      </div>
-    </header>
-
     <main class="mx-auto max-w-7xl space-y-6 px-4 pt-6 sm:px-6 lg:px-8">
       <!-- 1. Banner Tahun Ajaran Aktif -->
-      <section class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 via-teal-50/50 to-white p-4 shadow-xs">
+      <section class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-brand-200/80 bg-brand-50/50 p-4 shadow-xs">
         <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-xs">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-700 text-white shadow-xs">
             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <span class="text-xs font-bold uppercase tracking-wider text-emerald-800">Tahun Ajaran Aktif</span>
-              <AppBadge variant="brand" size="xs">AKTIF</AppBadge>
+              <span class="text-xs font-bold uppercase tracking-wider text-brand-900">Tahun Ajaran Aktif</span>
+              <AppBadge variant="brand" size="sm">AKTIF</AppBadge>
             </div>
             <p class="text-sm font-extrabold text-slate-900">
               {{ activeSemester ? `${activeSemester.academic_year} (${activeSemester.semester_type})` : '2026/2027 (Semester Ganjil)' }}
@@ -125,7 +155,7 @@ onMounted(async () => {
           </div>
         </div>
         <div class="flex items-center gap-2 text-xs font-semibold text-slate-600">
-          <span class="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="inline-block h-2 w-2 rounded-full bg-brand-500 animate-pulse"></span>
           <span>Kurikulum Merdeka</span>
         </div>
       </section>
@@ -185,7 +215,10 @@ onMounted(async () => {
         <AppCard class="flex flex-col justify-between">
           <div class="flex items-start justify-between">
             <div>
-              <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Ujian Aktif</p>
+              <div class="flex items-center gap-1.5">
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Ujian Aktif</p>
+                <AppBadge v-if="quizzes.length > 0" variant="brand" size="xs">CBT Aktif</AppBadge>
+              </div>
               <p class="mt-2 text-3xl font-black text-slate-900">{{ loading ? '…' : quizzes.length }}</p>
             </div>
             <div class="rounded-xl bg-slate-100 p-2.5 text-slate-700">
@@ -206,7 +239,11 @@ onMounted(async () => {
         <AppCard class="flex flex-col justify-between">
           <div class="flex items-start justify-between">
             <div>
-              <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Nilai Pending</p>
+              <div class="flex items-center gap-1.5">
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Nilai Pending</p>
+                <AppBadge v-if="pendingSubmissions.length > 0" variant="warning" size="xs">Perlu Koreksi</AppBadge>
+                <AppBadge v-else variant="neutral" size="xs">Tuntas</AppBadge>
+              </div>
               <p class="mt-2 text-3xl font-black text-slate-900">{{ loading ? '…' : pendingSubmissions.length }}</p>
             </div>
             <div class="rounded-xl bg-amber-50 p-2.5 text-amber-700">
@@ -223,92 +260,264 @@ onMounted(async () => {
           </div>
         </AppCard>
 
-        <!-- Kartu 4: Presensi Kehadiran & Aksi Cepat -->
-        <div class="rounded-2xl border border-emerald-600 bg-emerald-700 p-5 text-white shadow-xs flex flex-col justify-between">
+        <!-- Kartu 4: Presensi Hari Ini (Anti-Bloat Metrik) -->
+        <AppCard class="flex flex-col justify-between">
           <div class="flex items-start justify-between">
             <div>
-              <p class="text-xs font-bold uppercase tracking-wider text-emerald-100">Presensi Kehadiran</p>
-              <p class="mt-1 text-base font-extrabold text-white">Input Absensi Sesi</p>
-              <p class="text-[11px] text-emerald-100 mt-0.5">Catat H/S/I/A sekelas 1-klik</p>
+              <div class="flex items-center gap-1.5">
+                <p class="text-xs font-bold uppercase tracking-wider text-slate-500">Presensi Hari Ini</p>
+                <AppBadge v-if="todaySchedules.length > 0" variant="brand" size="xs">Siap Diabsen</AppBadge>
+              </div>
+              <p class="mt-2 text-3xl font-black text-slate-900">{{ loading ? '…' : todaySchedules.length }}</p>
             </div>
-            <div class="rounded-xl bg-white/20 p-2 text-white">
+            <div class="rounded-xl bg-emerald-50 p-2.5 text-emerald-700">
               <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
             </div>
           </div>
-          <div class="mt-4 pt-2">
-            <NuxtLink
-              to="/teacher/attendance"
-              class="block w-full rounded-xl bg-white px-3 py-2 text-center text-xs font-bold text-emerald-800 shadow-xs hover:bg-emerald-50 transition"
+          <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span class="text-slate-500 font-medium">
+              {{ todaySchedules.length ? `${todaySchedules.length} sesi mengajar aktif` : 'Tidak ada jadwal hari ini' }}
+            </span>
+            <a href="#pusat-presensi-guru" class="font-bold text-emerald-700 hover:underline">
+              Buka Presensi ↓
+            </a>
+          </div>
+        </AppCard>
+      </section>
+
+      <!-- 4. PUSAT PRESENSI CEPAT GURU (Solusi Cognitive Overload & Multi-Subject) -->
+      <section id="pusat-presensi-guru" class="rounded-3xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-xs space-y-5">
+        <!-- Section Header with Multi-Subject Filter -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black tracking-wide uppercase">
+                Pusat Presensi Cepat
+              </span>
+              <span class="text-xs text-slate-400 font-medium">• Hari Ini ({{ currentDayName }})</span>
+            </div>
+            <h2 class="mt-1 text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
+              Presensi Tatap Muka & QR Scan Siswa
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Kelola absensi sesi hari ini langsung tanpa navigasi berbelit. Siswa dapat scan QR mandiri atau diinput manual.
+            </p>
+          </div>
+
+          <!-- Multi-Subject Filter Tabs (Mengurangi Cognitive Overload saat guru mengajar banyak mapel) -->
+          <div 
+            v-if="distinctSubjects.length > 1" 
+            role="tablist"
+            aria-label="Filter Mata Pelajaran"
+            class="flex flex-wrap items-center gap-1.5 self-start md:self-auto bg-slate-100/80 p-1 rounded-2xl border border-slate-200/60"
+          >
+            <button
+              type="button"
+              role="tab"
+              :aria-selected="selectedSubjectFilter === 'all'"
+              @click="selectedSubjectFilter = 'all'"
+              class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:outline-none"
+              :class="selectedSubjectFilter === 'all' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
             >
-              + Buka Presensi Kelas (QR & Manual)
-            </NuxtLink>
+              Semua Mapel
+            </button>
+            <button
+              v-for="subj in distinctSubjects"
+              :key="subj"
+              type="button"
+              role="tab"
+              :aria-selected="selectedSubjectFilter === subj"
+              @click="selectedSubjectFilter = subj"
+              class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:outline-none"
+              :class="selectedSubjectFilter === subj ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+            >
+              {{ subj }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Today Active Sessions Grid -->
+        <div v-if="filteredTodaySchedules.length > 0" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div
+            v-for="schedule in filteredTodaySchedules"
+            :key="schedule.id"
+            class="rounded-2xl border p-4 shadow-2xs transition-all flex flex-col justify-between"
+            :class="[
+              getTimingStatus(schedule.start_time, schedule.end_time) === 'active'
+                ? 'border-emerald-500 bg-white ring-2 ring-emerald-500/20 shadow-md'
+                : getTimingStatus(schedule.start_time, schedule.end_time) === 'passed'
+                  ? 'border-slate-200 bg-slate-50/70 opacity-75'
+                  : 'border-slate-200 bg-gradient-to-b from-white to-slate-50/50 hover:border-emerald-400'
+            ]"
+          >
+            <div>
+              <!-- Top Badge Strip -->
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-extrabold tracking-tight">
+                    {{ className(schedule.course) }}
+                  </span>
+                  <span
+                    v-if="getTimingStatus(schedule.start_time, schedule.end_time) === 'active'"
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold tracking-wide animate-pulse"
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+                    SEKARANG
+                  </span>
+                  <span
+                    v-else-if="getTimingStatus(schedule.start_time, schedule.end_time) === 'passed'"
+                    class="text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-full"
+                  >
+                    Selesai
+                  </span>
+                </div>
+                <span class="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
+                  {{ schedule.start_time }} – {{ schedule.end_time }}
+                </span>
+              </div>
+
+              <!-- Subject & Room -->
+              <h3 class="mt-3 text-sm font-black text-slate-900 leading-snug">
+                {{ subjectName(schedule.course) }}
+              </h3>
+              <p class="text-xs text-slate-500 font-medium mt-0.5">
+                Ruang {{ schedule.room_number || 'KBM Reguler' }} &bull; {{ schedule.course?.class?.capacity || 36 }} Siswa
+              </p>
+
+              <!-- Current Meeting Info -->
+              <div v-if="schedule.current_meet" class="mt-2.5 p-2 rounded-xl bg-white border border-slate-100 text-[11px] text-slate-600">
+                <span class="font-bold text-slate-800">Pertemuan {{ schedule.current_meet.meeting_number }}:</span>
+                <span class="line-clamp-1 mt-0.5">{{ schedule.current_meet.title }}</span>
+              </div>
+            </div>
+
+            <!-- Two Clear Direct Actions (No cognitive friction) -->
+            <div class="mt-4 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
+              <NuxtLink
+                :to="`/teacher/attendance?course_id=${schedule.course?.id}&schedule_id=${schedule.id}&action=qr`"
+                aria-label="Tampilkan proyektor QR presensi siswa"
+                class="py-2 px-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs text-center focus-visible:ring-2 focus-visible:ring-emerald-600"
+              >
+                <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                <span>Tampilkan QR</span>
+              </NuxtLink>
+
+              <NuxtLink
+                :to="`/teacher/attendance?course_id=${schedule.course?.id}&schedule_id=${schedule.id}`"
+                aria-label="Input presensi kehadiran siswa manual"
+                class="py-2 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition flex items-center justify-center gap-1.5 text-center focus-visible:ring-2 focus-visible:ring-slate-400"
+              >
+                <svg class="w-4 h-4 shrink-0 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                <span>Input Manual</span>
+              </NuxtLink>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty State with Quick Auxiliary Access -->
+        <div v-else class="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center space-y-3">
+          <div>
+            <p class="text-sm font-bold text-slate-800">
+              Tidak ada jadwal tatap muka hari ini {{ selectedSubjectFilter !== 'all' ? `untuk mapel ${selectedSubjectFilter}` : '' }}
+            </p>
+            <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+              Perlu melakukan absensi untuk jam pengganti atau kelas remedial? Buka opsi kelas di bawah.
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="isOtherClassSelectorOpen = true"
+            aria-label="Buka pemilihan kelas pengganti atau insidental"
+            class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition inline-flex items-center gap-1.5 shadow-2xs cursor-pointer focus-visible:ring-2 focus-visible:ring-emerald-600"
+          >
+            <span>+ Pilih Kelas Pengganti / Insidental</span>
+          </button>
+        </div>
+
+        <!-- Secondary Drawer: Presensi Kelas Lain (Organized per Mapel) -->
+        <div class="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <button
+            type="button"
+            @click="isOtherClassSelectorOpen = !isOtherClassSelectorOpen"
+            class="text-xs font-bold text-emerald-800 hover:text-emerald-950 inline-flex items-center gap-1.5 cursor-pointer py-1"
+          >
+            <span>{{ isOtherClassSelectorOpen ? '▲ Sembunyikan Pilihan Kelas Lain' : '▼ Buka Presensi Kelas Lain (Pengganti / Tambahan)' }}</span>
+          </button>
+
+          <NuxtLink to="/teacher/attendance" class="font-bold text-slate-500 hover:text-slate-800 transition">
+            Lihat Rekapitulasi Riwayat Absensi Seluruh Sesi →
+          </NuxtLink>
+        </div>
+
+        <!-- Grouped Subject Class Picker (Tampil hanya saat dibuka untuk cegah Cognitive Overload) -->
+        <div v-if="isOtherClassSelectorOpen" class="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-4">
+          <div class="text-xs font-bold text-slate-700">
+            Pilih Rombel / Kelas yang Ingin Diabsen:
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+            <div
+              v-for="course in filteredCourses"
+              :key="course.id"
+              class="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-2 hover:border-emerald-400 transition"
+            >
+              <div>
+                <span class="block text-xs font-black text-slate-900">{{ className(course) }}</span>
+                <span class="block text-[11px] text-slate-500 font-medium">{{ subjectName(course) }}</span>
+              </div>
+              <NuxtLink
+                :to="`/teacher/attendance?course_id=${course.id}`"
+                class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shrink-0 transition"
+              >
+                Buka Sesi
+              </NuxtLink>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- 4. Quick Shortcuts -->
+      <!-- 5. Aksi Instan Guru (Anti-Redundansi Sidebar) -->
       <AppCard>
-        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4">Pintasan Cepat</h2>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-          <!-- Shortcut 1: Kelas -->
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">Aksi Cepat Guru</h2>
+          <span class="text-[11px] text-slate-400 font-medium">Pintasan ke modul kerja aktif</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <!-- Aksi 1: Buat Kuis CBT -->
           <NuxtLink
-            to="/teacher/classes"
+            to="/teacher/quizzes"
             class="group flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-center transition hover:border-emerald-500 hover:bg-emerald-50/30 hover:shadow-xs min-tap-target"
           >
             <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 text-slate-700 transition group-hover:bg-emerald-600 group-hover:text-white">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m3 0h1m-4-8l2-2 2 2m-2-2v6" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
               </svg>
             </div>
-            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">Kelas Saya</span>
-            <span class="text-[10px] text-slate-500">Rombel & Cockpit</span>
+            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">+ Buat Asesmen CBT</span>
+            <span class="text-[10px] text-slate-500">Kuis & Ujian Mandiri</span>
           </NuxtLink>
 
-          <!-- Shortcut 2: Jadwal -->
-          <NuxtLink
-            to="#jadwal-hari-ini"
-            class="group flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-center transition hover:border-emerald-500 hover:bg-emerald-50/30 hover:shadow-xs min-tap-target"
-          >
-            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 text-slate-700 transition group-hover:bg-emerald-600 group-hover:text-white">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">Jadwal Mengajar</span>
-            <span class="text-[10px] text-slate-500">{{ currentDayName }}</span>
-          </NuxtLink>
-
-          <!-- Shortcut 3: Bahan Ajar -->
+          <!-- Aksi 2: Upload Materi -->
           <NuxtLink
             to="/teacher/materials/bank"
             class="group flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-center transition hover:border-emerald-500 hover:bg-emerald-50/30 hover:shadow-xs min-tap-target"
           >
             <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 text-slate-700 transition group-hover:bg-emerald-600 group-hover:text-white">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
             </div>
-            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">Bahan Ajar</span>
-            <span class="text-[10px] text-slate-500">Bank Materi & Soal</span>
+            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">+ Unggah Materi</span>
+            <span class="text-[10px] text-slate-500">Bank Modul & Dokumen</span>
           </NuxtLink>
 
-          <!-- Shortcut 4: Presensi Kelas -->
-          <NuxtLink
-            to="/teacher/attendance"
-            class="group flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-center transition hover:border-emerald-500 hover:bg-emerald-50/30 hover:shadow-xs min-tap-target"
-          >
-            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 text-slate-700 transition group-hover:bg-emerald-600 group-hover:text-white">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
-            </div>
-            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">Absensi Siswa</span>
-            <span class="text-[10px] text-slate-500">Rekapitulasi Harian</span>
-          </NuxtLink>
-
-          <!-- Shortcut 5: Jurnal Guru -->
+          <!-- Aksi 3: Jurnal Guru -->
           <NuxtLink
             to="/teacher/journals"
             class="group flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-center transition hover:border-emerald-500 hover:bg-emerald-50/30 hover:shadow-xs min-tap-target"
@@ -318,8 +527,22 @@ onMounted(async () => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
             </div>
-            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">Jurnal Guru</span>
-            <span class="text-[10px] text-slate-500">Log Tatap Muka</span>
+            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">Isi Jurnal KBM</span>
+            <span class="text-[10px] text-slate-500">Catat Log Tatap Muka</span>
+          </NuxtLink>
+
+          <!-- Aksi 4: Buku Nilai & Ledger -->
+          <NuxtLink
+            to="/teacher/grades"
+            class="group flex flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-center transition hover:border-emerald-500 hover:bg-emerald-50/30 hover:shadow-xs min-tap-target"
+          >
+            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 text-slate-700 transition group-hover:bg-emerald-600 group-hover:text-white">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <span class="mt-2.5 block text-xs font-bold text-slate-900 group-hover:text-emerald-800">Buku Nilai KKTP</span>
+            <span class="text-[10px] text-slate-500">Rekap Asesmen Siswa</span>
           </NuxtLink>
         </div>
       </AppCard>
@@ -348,17 +571,41 @@ onMounted(async () => {
             <div
               v-for="schedule in todaySchedules"
               :key="schedule.id"
-              class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 first:pt-0 last:pb-0"
+              class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4 first:pt-0 last:pb-0 transition-all rounded-xl px-2"
+              :class="[
+                getTimingStatus(schedule.start_time, schedule.end_time) === 'active'
+                  ? 'bg-emerald-50/60 ring-1 ring-emerald-400'
+                  : getTimingStatus(schedule.start_time, schedule.end_time) === 'passed'
+                    ? 'opacity-70 bg-slate-50/50'
+                    : ''
+              ]"
             >
               <div class="flex items-start gap-3.5">
-                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 font-bold text-xs">
-                  <svg class="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div 
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-xs"
+                  :class="getTimingStatus(schedule.start_time, schedule.end_time) === 'active' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
                 <div>
-                  <b class="text-sm font-bold text-slate-900">{{ subjectName(schedule.course) }}</b>
-                  <p class="text-xs text-slate-500 font-medium">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <b class="text-sm font-bold text-slate-900">{{ subjectName(schedule.course) }}</b>
+                    <span
+                      v-if="getTimingStatus(schedule.start_time, schedule.end_time) === 'active'"
+                      class="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold animate-pulse"
+                    >
+                      SEKARANG
+                    </span>
+                    <span
+                      v-else-if="getTimingStatus(schedule.start_time, schedule.end_time) === 'passed'"
+                      class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold"
+                    >
+                      Selesai
+                    </span>
+                  </div>
+                  <p class="text-xs text-slate-500 font-medium mt-0.5">
                     {{ className(schedule.course) }} · Ruang {{ schedule.room_number || 'Belum ditentukan' }}
                   </p>
                   <div v-if="schedule.current_meet" class="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -400,11 +647,33 @@ onMounted(async () => {
             </div>
           </div>
 
-          <AppEmptyState
-            v-else
-            title="Tidak ada jadwal mengajar hari ini"
-            description="Manfaatkan waktu luang untuk merancang bahan ajar atau mengevaluasi tugas siswa."
-          />
+          <div v-else class="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center space-y-3">
+            <div class="w-10 h-10 rounded-full bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-sm font-bold text-slate-800">Tidak ada jadwal KBM tatap muka hari ini</p>
+              <p class="text-xs text-slate-500 max-w-sm mx-auto mt-0.5">
+                Manfaatkan waktu luang untuk menyusun modul pembelajaran atau memperbarui bank soal asesmen.
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <NuxtLink
+                to="/teacher/materials/bank"
+                class="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-500 text-slate-700 hover:text-emerald-800 text-xs font-bold transition shadow-2xs focus-visible:ring-2 focus-visible:ring-emerald-600"
+              >
+                + Siapkan Modul Ajar
+              </NuxtLink>
+              <NuxtLink
+                to="/teacher/questions/bank"
+                class="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-500 text-slate-700 hover:text-emerald-800 text-xs font-bold transition shadow-2xs focus-visible:ring-2 focus-visible:ring-emerald-600"
+              >
+                Rancang Soal CBT
+              </NuxtLink>
+            </div>
+          </div>
         </AppCard>
 
         <!-- Tugas Perlu Dinilai -->
@@ -455,7 +724,7 @@ onMounted(async () => {
 
       <!-- 6. Section: Kelas Diampu -->
       <AppCard class="space-y-4">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <div class="flex items-center gap-2">
               <AppBadge variant="neutral" size="xs">PORTAL KELAS</AppBadge>
@@ -465,18 +734,28 @@ onMounted(async () => {
               Akses ruang kerja terpadu layar tunggal untuk absensi cepat, materi pembelajaran, CBT, dan buku nilai.
             </p>
           </div>
-          <NuxtLink to="/teacher/classes" class="text-xs font-bold text-emerald-700 hover:underline">
-            Lihat Semua Kelas →
-          </NuxtLink>
+          <div class="flex items-center gap-3">
+            <select
+              v-if="distinctSubjects.length > 1"
+              v-model="selectedSubjectFilter"
+              class="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 outline-none cursor-pointer"
+            >
+              <option value="all">Semua Mapel ({{ courses.length }} Kelas)</option>
+              <option v-for="subj in distinctSubjects" :key="subj" :value="subj">{{ subj }}</option>
+            </select>
+            <NuxtLink to="/teacher/classes" class="text-xs font-bold text-emerald-700 hover:underline shrink-0">
+              Lihat Semua Kelas →
+            </NuxtLink>
+          </div>
         </div>
 
         <div v-if="loading" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <AppSkeleton v-for="i in 3" :key="i" height="h-36" class="rounded-xl" />
         </div>
 
-        <div v-else-if="courses.length" class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div v-else-if="filteredCourses.length" class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           <div
-            v-for="course in courses"
+            v-for="course in filteredCourses"
             :key="course.id"
             class="group bg-white border border-slate-200/90 hover:border-emerald-500 rounded-3xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
           >
@@ -485,7 +764,7 @@ onMounted(async () => {
                 <span class="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-black tracking-tight">
                   {{ className(course) }}
                 </span>
-                <span class="text-[11px] font-bold text-slate-400">
+                <span class="text-[11px] font-bold text-slate-600">
                   {{ course.class?.room_number ? `Ruang ${course.class.room_number}` : 'Ruang KBM' }}
                 </span>
               </div>
@@ -500,11 +779,11 @@ onMounted(async () => {
 
               <div class="mt-4 grid grid-cols-2 gap-2 pt-3 border-t border-slate-100 text-xs">
                 <div class="p-2.5 bg-slate-50 rounded-xl">
-                  <span class="block text-[10px] font-bold text-slate-400 uppercase">Siswa Terdaftar</span>
+                  <span class="block text-[10px] font-bold text-slate-600 uppercase">Siswa Terdaftar</span>
                   <span class="text-xs font-black text-slate-900">{{ course.class?.capacity || course.class?.students_count || 36 }} Siswa</span>
                 </div>
                 <div class="p-2.5 bg-slate-50 rounded-xl">
-                  <span class="block text-[10px] font-bold text-slate-400 uppercase">Sesi Sub-bab</span>
+                  <span class="block text-[10px] font-bold text-slate-600 uppercase">Sesi Sub-bab</span>
                   <span class="text-xs font-black text-slate-900">{{ course.meets_count || 0 }} Pertemuan</span>
                 </div>
               </div>

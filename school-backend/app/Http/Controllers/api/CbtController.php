@@ -66,6 +66,8 @@ class CbtController extends Controller
                 'id'             => $item->id,
                 'type'           => $item->type,
                 'question'       => $item->question,
+                'image_url'      => $item->image_url,
+                'image_meta'     => $item->image_meta,
                 'options'        => $item->options,
                 'data'           => $item->data,
                 'correct_answer' => $item->correct_answer,

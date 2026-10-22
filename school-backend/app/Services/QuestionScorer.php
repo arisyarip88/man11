@@ -72,6 +72,8 @@ class QuestionScorer
             'number' => $q['number'],
             'type' => $type,
             'question' => $q['question'],
+            'image_url' => $q['image_url'] ?? null,
+            'image_meta' => $q['image_meta'] ?? null,
             'options' => [],
             'weight' => $q['weight'] ?? 1,
             'difficulty' => $q['difficulty'] ?? 'medium',

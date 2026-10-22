@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import QuestionImageViewer from '~/components/quiz/QuestionImageViewer.vue'
 
 definePageMeta({ layout: false, middleware: 'auth' })
 
@@ -9,6 +10,14 @@ const quizId = computed(() => route.params.id)
 const config = useRuntimeConfig()
 const token = useCookie<string | null>('auth_token')
 const apiBase = config.public.apiBase || 'http://localhost:8000/api'
+const storageBase = config.public.storageBase || 'http://localhost:8000/storage'
+
+const getFullUrl = (url: string | null | undefined) => {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  const cleanPath = url.replace(/^\/storage\/?/, '')
+  return `${storageBase}/${cleanPath}`
+}
 
 interface QuestionOption {
   key: string
@@ -19,6 +28,8 @@ interface ExamQuestion {
   number: number
   type: 'pg' | 'pg_kompleks' | 'esai' | 'isian' | 'menjodohkan' | 'benar_salah'
   question: string
+  image_url?: string | null
+  image_meta?: any
   options?: QuestionOption[]
   pairs?: { id: string; left: string }[]
   choices?: string[]
@@ -147,6 +158,7 @@ const startExam = async (tokenInput?: string) => {
         startTimer()
         setupSecurityListeners()
         enterFullscreen()
+        prefetchUpcomingImages(0)
       }
     }
   } catch (err: any) {
@@ -233,6 +245,44 @@ const toggleDoubtful = () => {
   const qNum = String(currentQuestion.value.number)
   doubtful.value[qNum] = !doubtful.value[qNum]
 }
+
+const isMobilePaletteOpen = ref(false)
+
+const answeredCount = computed(() => {
+  return questions.value.filter(q => isAnswered(q.number)).length
+})
+
+const doubtfulCount = computed(() => {
+  return questions.value.filter(q => doubtful.value[String(q.number)]).length
+})
+
+const jumpToQuestion = (idx: number) => {
+  if (idx >= 0 && idx < questions.value.length) {
+    currentIndex.value = idx
+    isMobilePaletteOpen.value = false
+  }
+}
+
+// Prefetch gambar soal berikutnya (N+1 dan N+2) untuk pengalaman CBT bebas lag (Zero Latency)
+const prefetchedImages = new Set<string>()
+const prefetchUpcomingImages = (idx: number) => {
+  if (typeof window === 'undefined') return
+  const targets = [idx + 1, idx + 2]
+  for (const t of targets) {
+    if (t < questions.value.length) {
+      const q = questions.value[t]
+      if (q?.image_url && !prefetchedImages.has(q.image_url)) {
+        prefetchedImages.add(q.image_url)
+        const img = new Image()
+        img.src = getFullUrl(q.image_url)
+      }
+    }
+  }
+}
+
+watch(currentIndex, (newIdx) => {
+  prefetchUpcomingImages(newIdx)
+})
 
 // Selesaikan Ujian
 const finishExam = async () => {
@@ -581,8 +631,20 @@ onUnmounted(() => {
 
         <button
           v-if="!isFinished && isStarted"
+          @click="isMobilePaletteOpen = true"
+          class="lg:hidden px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs"
+          title="Daftar Soal"
+        >
+          <svg class="w-4 h-4 text-brand-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+          </svg>
+          <span class="font-mono">{{ currentIndex + 1 }}/{{ questions.length }}</span>
+        </button>
+
+        <button
+          v-if="!isFinished && isStarted"
           @click="isConfirmModalOpen = true"
-          class="px-3.5 sm:px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-xs hover:bg-emerald-700 transition"
+          class="px-3.5 sm:px-4 py-2 rounded-xl bg-brand-700 text-white text-xs font-bold shadow-xs hover:bg-brand-800 transition"
         >
           Selesaikan Ujian
         </button>
@@ -676,6 +738,13 @@ onUnmounted(() => {
               {{ currentQuestion?.question }}
             </div>
 
+            <!-- Lampiran Gambar Butir Soal CBT Siswa -->
+            <QuestionImageViewer
+              v-if="currentQuestion?.image_url"
+              :image-url="currentQuestion.image_url"
+              :meta="currentQuestion.image_meta"
+            />
+
             <component
               v-if="currentQuestion"
               :is="answerComponent(currentQuestion.type)"
@@ -720,7 +789,142 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+
+      <!-- Desktop Question Navigation Palette Sidebar -->
+      <aside class="hidden lg:block lg:col-span-1 space-y-4">
+        <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-4 sticky top-22">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h2 class="text-xs font-black uppercase tracking-wider text-slate-800">Daftar Nomor Soal</h2>
+              <p class="text-[11px] text-slate-500 mt-0.5">
+                Terjawab: <b class="text-brand-700 font-mono">{{ answeredCount }}</b> / {{ questions.length }}
+              </p>
+            </div>
+            <span v-if="doubtfulCount > 0" class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold font-mono">
+              {{ doubtfulCount }} Ragu
+            </span>
+          </div>
+
+          <!-- Number Grid -->
+          <div class="grid grid-cols-5 gap-2 max-h-[380px] overflow-y-auto pr-1">
+            <button
+              v-for="(q, idx) in questions"
+              :key="q.number"
+              type="button"
+              @click="jumpToQuestion(idx)"
+              :class="[
+                'h-10 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center border relative cursor-pointer',
+                currentIndex === idx ? 'ring-2 ring-brand-700 ring-offset-2 z-10' : '',
+                doubtful[String(q.number)]
+                  ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-xs'
+                  : isAnswered(q.number)
+                    ? 'bg-brand-600 text-white border-brand-700 shadow-xs'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+              ]"
+            >
+              {{ q.number }}
+            </button>
+          </div>
+
+          <!-- Palette Legend -->
+          <div class="pt-3 border-t border-slate-100 space-y-1.5 text-[11px]">
+            <div class="flex items-center gap-2 text-slate-600">
+              <span class="w-3.5 h-3.5 rounded-md bg-brand-600 border border-brand-700 shrink-0"></span>
+              <span>Sudah Terjawab</span>
+            </div>
+            <div class="flex items-center gap-2 text-slate-600">
+              <span class="w-3.5 h-3.5 rounded-md bg-amber-400 border border-amber-500 shrink-0"></span>
+              <span>Ragu-ragu</span>
+            </div>
+            <div class="flex items-center gap-2 text-slate-600">
+              <span class="w-3.5 h-3.5 rounded-md bg-slate-100 border border-slate-200 shrink-0"></span>
+              <span>Belum Dikerjakan</span>
+            </div>
+          </div>
+
+          <!-- Bottom Action Shortcut -->
+          <button
+            type="button"
+            @click="isConfirmModalOpen = true"
+            class="w-full py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+          >
+            Selesaikan Ujian
+          </button>
+        </div>
+      </aside>
     </main>
+
+    <!-- Mobile Offcanvas Question Navigation Palette Sheet -->
+    <div
+      v-if="isMobilePaletteOpen && !isFinished && isStarted"
+      class="fixed inset-0 z-50 lg:hidden flex justify-end bg-slate-950/60 backdrop-blur-xs"
+      @click.self="isMobilePaletteOpen = false"
+    >
+      <div class="w-full max-w-xs bg-white h-full p-5 flex flex-col justify-between shadow-2xl">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h2 class="text-sm font-extrabold text-slate-900">Daftar Nomor Soal</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Terjawab: <b class="text-brand-700 font-mono">{{ answeredCount }}</b> / {{ questions.length }}
+              </p>
+            </div>
+            <button
+              @click="isMobilePaletteOpen = false"
+              class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              aria-label="Tutup Palet"
+            >
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-5 gap-2 max-h-[60vh] overflow-y-auto pr-1">
+            <button
+              v-for="(q, idx) in questions"
+              :key="q.number"
+              type="button"
+              @click="jumpToQuestion(idx)"
+              :class="[
+                'h-11 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center border cursor-pointer',
+                currentIndex === idx ? 'ring-2 ring-brand-700 ring-offset-1 z-10' : '',
+                doubtful[String(q.number)]
+                  ? 'bg-amber-400 text-slate-950 border-amber-500 shadow-xs'
+                  : isAnswered(q.number)
+                    ? 'bg-brand-600 text-white border-brand-700 shadow-xs'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+              ]"
+            >
+              {{ q.number }}
+            </button>
+          </div>
+
+          <!-- Legend -->
+          <div class="pt-3 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
+            <div class="flex items-center gap-2">
+              <span class="w-3.5 h-3.5 rounded-md bg-brand-600 border border-brand-700"></span>
+              <span>Terjawab ({{ answeredCount }})</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="w-3.5 h-3.5 rounded-md bg-amber-400 border border-amber-500"></span>
+              <span>Ragu-ragu ({{ doubtfulCount }})</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="w-3.5 h-3.5 rounded-md bg-slate-100 border border-slate-200"></span>
+              <span>Belum dijawab</span>
+            </div>
+          </div>
+        </div>
+
+        <button
+          @click="isConfirmModalOpen = true; isMobilePaletteOpen = false"
+          class="w-full py-3 rounded-xl bg-brand-700 text-white font-bold text-xs shadow-xs hover:bg-brand-800 transition cursor-pointer"
+        >
+          Selesaikan Ujian Sekarang
+        </button>
+      </div>
+    </div>
 
     <!-- Modal Konfirmasi Selesaikan Ujian -->
     <div
@@ -748,7 +952,7 @@ onUnmounted(() => {
           <button
             @click="finishExam"
             :disabled="submitting"
-            class="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50"
+            class="flex-1 py-2.5 rounded-xl bg-brand-700 text-white text-xs font-bold hover:bg-brand-800 disabled:opacity-50"
           >
             {{ submitting ? 'Mengirim...' : 'Ya, Kumpulkan' }}
           </button>

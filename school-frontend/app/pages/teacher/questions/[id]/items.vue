@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import BackButton from '~/components/ui/BackButton.vue'
+import AppModal from '~/components/ui/AppModal.vue'
+import AppButton from '~/components/ui/AppButton.vue'
+import QuestionImageUploader from '~/components/quiz/QuestionImageUploader.vue'
 
 definePageMeta({ layout: 'teacher', middleware: 'auth' })
 
@@ -10,6 +13,14 @@ const bankId = computed(() => route.params.id)
 const config = useRuntimeConfig()
 const token = useCookie<string | null>('auth_token')
 const apiBase = config.public.apiBase || 'http://localhost:8000/api'
+const storageBase = config.public.storageBase || 'http://localhost:8000/storage'
+
+const getFullUrl = (url: string | null | undefined) => {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  const cleanPath = url.replace(/^\/storage\/?/, '')
+  return `${storageBase}/${cleanPath}`
+}
 
 interface OptionItem {
   key: string
@@ -34,6 +45,8 @@ interface QuestionItem {
   question_bank_id: number
   type: 'pg' | 'pg_kompleks' | 'isian' | 'menjodohkan' | 'benar_salah' | 'esai'
   question: string
+  image_url?: string | null
+  image_meta?: any
   options: OptionItem[] | null
   data?: {
     accepted_answers?: string[]
@@ -69,6 +82,8 @@ const form = ref({
   difficulty: 'medium' as 'easy' | 'medium' | 'hard',
   weight: 1.0,
   question: '',
+  image_url: null as string | null,
+  image_meta: null as any,
   options: [
     { key: 'A', text: '', is_correct: true },
     { key: 'B', text: '', is_correct: false },
@@ -133,6 +148,8 @@ const openAddModal = () => {
     difficulty: 'medium',
     weight: 1.0,
     question: '',
+    image_url: null,
+    image_meta: null,
     options: [
       { key: 'A', text: '', is_correct: true },
       { key: 'B', text: '', is_correct: false },
@@ -188,6 +205,8 @@ const openEditModal = (item: QuestionItem) => {
     difficulty: item.difficulty,
     weight: Number(item.weight) || 1.0,
     question: item.question,
+    image_url: item.image_url || null,
+    image_meta: item.image_meta || null,
     options: parsedOptions,
     accepted_answers: accepted,
     pairs,
@@ -308,6 +327,8 @@ const saveItem = async () => {
     const payload = {
       type: form.value.type,
       question: form.value.question,
+      image_url: form.value.image_url || null,
+      image_meta: form.value.image_meta || null,
       difficulty: form.value.difficulty,
       weight: form.value.weight,
       options: payloadOptions,
@@ -337,13 +358,27 @@ const saveItem = async () => {
   }
 }
 
-const deleteItem = async (itemId: number) => {
-  if (!confirm('Apakah Anda yakin ingin menghapus butir soal ini?')) return
+// Modal Delete Confirmation State
+const isDeleteModalOpen = ref(false)
+const targetDeleteId = ref<number | null>(null)
+
+const promptDeleteItem = (itemId: number) => {
+  targetDeleteId.value = itemId
+  isDeleteModalOpen.value = true
+}
+
+const confirmDeleteItem = async () => {
+  if (!targetDeleteId.value) return
+  actionLoading.value = true
   try {
-    await api(`/question-banks/items/${itemId}`, { method: 'DELETE' })
+    await api(`/question-banks/items/${targetDeleteId.value}`, { method: 'DELETE' })
+    isDeleteModalOpen.value = false
+    targetDeleteId.value = null
     await fetchData()
   } catch (err: any) {
-    alert(err?.data?.message || 'Gagal menghapus butir soal')
+    formError.value = err?.data?.message || 'Gagal menghapus butir soal.'
+  } finally {
+    actionLoading.value = false
   }
 }
 
@@ -503,6 +538,10 @@ const getTypeBadge = (type: string) => {
             <span class="text-[11px] font-semibold text-slate-500">
               Bobot: <b class="text-slate-800">{{ item.weight }} Poin</b>
             </span>
+            <span v-if="item.image_url" class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+              <svg class="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              Ada Gambar
+            </span>
           </div>
 
           <div class="flex items-center gap-1.5">
@@ -522,8 +561,9 @@ const getTypeBadge = (type: string) => {
             <!-- Edit Button -->
             <button
               @click="openEditModal(item)"
-              class="p-2 rounded-xl text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition"
+              class="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-slate-500 hover:text-brand-800 hover:bg-brand-50 transition cursor-pointer"
               title="Edit Soal"
+              aria-label="Edit Soal"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -532,9 +572,10 @@ const getTypeBadge = (type: string) => {
 
             <!-- Delete Button -->
             <button
-              @click="deleteItem(item.id)"
-              class="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+              @click="promptDeleteItem(item.id)"
+              class="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
               title="Hapus Soal"
+              aria-label="Hapus Soal"
             >
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -546,6 +587,19 @@ const getTypeBadge = (type: string) => {
         <!-- Question Text -->
         <div class="text-sm font-semibold text-slate-900 leading-relaxed whitespace-pre-wrap">
           {{ item.question }}
+        </div>
+
+        <!-- Thumbnail Lampiran Gambar Butir Soal -->
+        <div v-if="item.image_url" class="max-w-md my-2 rounded-2xl overflow-hidden border border-slate-200/90 bg-slate-50 p-2 shadow-2xs">
+          <img
+            :src="getFullUrl(item.image_url)"
+            :alt="item.image_meta?.alt_text || 'Diagram butir soal'"
+            class="max-h-52 w-auto rounded-xl object-contain mx-auto"
+            loading="lazy"
+          />
+          <div v-if="item.image_meta?.alt_text" class="text-[11px] text-slate-500 text-center mt-1.5 italic font-medium">
+            {{ item.image_meta.alt_text }}
+          </div>
         </div>
 
         <!-- Render Content Berdasarkan Tipe -->
@@ -724,6 +778,12 @@ const getTypeBadge = (type: string) => {
               class="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
             ></textarea>
           </div>
+
+          <!-- Lampiran Gambar Soal (Opsional) -->
+          <QuestionImageUploader
+            v-model="form.image_url"
+            v-model:image-meta="form.image_meta"
+          />
 
           <!-- 1. Builder untuk PG / PG Kompleks -->
           <div v-if="form.type === 'pg' || form.type === 'pg_kompleks'" class="space-y-2">
@@ -1039,6 +1099,18 @@ const getTypeBadge = (type: string) => {
             {{ previewQuestion.question }}
           </p>
 
+          <!-- Pratinjau Gambar Soal -->
+          <div v-if="previewQuestion.raw?.image_url" class="max-w-md mx-auto my-3 rounded-2xl overflow-hidden border border-slate-200 bg-white p-2 shadow-2xs">
+            <img
+              :src="getFullUrl(previewQuestion.raw.image_url)"
+              :alt="previewQuestion.raw.image_meta?.alt_text || 'Pratinjau diagram soal'"
+              class="max-h-64 w-auto object-contain mx-auto rounded-xl"
+            />
+            <p v-if="previewQuestion.raw.image_meta?.alt_text" class="text-[11px] text-slate-500 text-center mt-1 italic">
+              {{ previewQuestion.raw.image_meta.alt_text }}
+            </p>
+          </div>
+
           <!-- Render Komponen Siswa yang Sama Persis -->
           <component
             :is="answerComponent(previewQuestion.type)"
@@ -1109,5 +1181,34 @@ const getTypeBadge = (type: string) => {
         </div>
       </div>
     </div>
+
+    <!-- Modal Konfirmasi Hapus Butir Soal -->
+    <AppModal
+      v-model="isDeleteModalOpen"
+      title="Hapus Butir Soal?"
+      description="Tindakan ini permanen dan akan menghapus butir soal dari paket bank soal ini."
+      max-width="sm"
+    >
+      <div class="space-y-4">
+        <p class="text-xs text-slate-600">
+          Apakah Anda yakin ingin menghapus butir soal ini?
+        </p>
+        <div class="flex justify-end gap-2 pt-2">
+          <AppButton 
+            variant="outline" 
+            @click="isDeleteModalOpen = false"
+          >
+            Batal
+          </AppButton>
+          <AppButton 
+            variant="danger" 
+            :loading="actionLoading"
+            @click="confirmDeleteItem"
+          >
+            Ya, Hapus
+          </AppButton>
+        </div>
+      </div>
+    </AppModal>
   </div>
 </template>

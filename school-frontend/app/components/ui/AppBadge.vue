@@ -16,13 +16,13 @@ const variantClasses = computed(() => {
     case 'brand':
       return 'bg-brand-100 text-brand-950 border-brand-200'
     case 'success':
-      return 'bg-emerald-100 text-emerald-950 border-emerald-200'
+      return 'bg-success-100 text-success-800 border-success-200'
     case 'warning':
-      return 'bg-amber-100 text-amber-950 border-amber-200'
+      return 'bg-warning-100 text-warning-800 border-warning-200'
     case 'danger':
-      return 'bg-rose-100 text-rose-950 border-rose-200'
+      return 'bg-danger-100 text-danger-800 border-danger-200'
     case 'info':
-      return 'bg-sky-100 text-sky-950 border-sky-200'
+      return 'bg-info-100 text-info-800 border-info-200'
     case 'neutral':
     default:
       return 'bg-slate-100 text-slate-800 border-slate-200'
@@ -34,13 +34,13 @@ const dotClasses = computed(() => {
     case 'brand':
       return 'bg-brand-700'
     case 'success':
-      return 'bg-emerald-700'
+      return 'bg-success-700'
     case 'warning':
-      return 'bg-amber-700'
+      return 'bg-warning-700'
     case 'danger':
-      return 'bg-rose-700'
+      return 'bg-danger-700'
     case 'info':
-      return 'bg-sky-700'
+      return 'bg-info-700'
     case 'neutral':
     default:
       return 'bg-slate-600'

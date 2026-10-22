@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import AppSkeleton from '~/components/ui/AppSkeleton.vue'
+import StudentActivitySidebar from '~/components/student/StudentActivitySidebar.vue'
 
 definePageMeta({ layout: 'student', middleware: 'auth' })
 
@@ -123,6 +124,8 @@ const handleStartExam = () => {
   }
 }
 
+const { isActivityDone, isQuizCompleted } = useStudentActivityProgress()
+
 // -------------------------------------------------------------------
 // 6 Kategori Aktivitas Belajar Siswa (Dropdown Sidebar LMS)
 // -------------------------------------------------------------------
@@ -138,49 +141,43 @@ const currentCategory = computed(() => quiz.value?.activity_category || (quiz.va
 const activityMenuItems = computed(() => [
   {
     key: 'pretest',
-    number: 1,
     label: 'Pretest',
-    count: getMeetPretests.value.length,
+    isDone: isActivityDone(meet.value, 'pretest'),
     active: currentCategory.value === 'pretest',
     url: currentCategory.value === 'pretest' ? '#' : (getMeetPretests.value.length > 0 ? `/student/quizzes/${getMeetPretests.value[0].id}/onboarding` : `/elearning/courses/${courseId.value}?meet=${meet.value?.meeting_number}&activity=pretest`)
   },
   {
     key: 'material',
-    number: 2,
     label: 'Modul & Bahan Ajar',
-    count: getMeetMaterials.value.length,
+    isDone: isActivityDone(meet.value, 'material'),
     active: false,
     url: getMeetMaterials.value.length > 0 ? `/student/materials/${getMeetMaterials.value[0].id}` : `/elearning/courses/${courseId.value}?meet=${meet.value?.meeting_number}&activity=material`
   },
   {
     key: 'discussion',
-    number: 3,
     label: 'Ruang Diskusi',
-    count: getMeetDiscussions.value.length,
+    isDone: isActivityDone(meet.value, 'discussion'),
     active: false,
     url: `/student/discussions/${meet.value?.id}`
   },
   {
     key: 'quiz',
-    number: 4,
     label: 'Kuis Formatif',
-    count: getMeetQuizzes.value.length,
+    isDone: isActivityDone(meet.value, 'quiz'),
     active: currentCategory.value === 'quiz',
     url: currentCategory.value === 'quiz' ? '#' : (getMeetQuizzes.value.length > 0 ? `/student/quizzes/${getMeetQuizzes.value[0].id}/onboarding` : `/elearning/courses/${courseId.value}?meet=${meet.value?.meeting_number}&activity=quiz`)
   },
   {
     key: 'assignment',
-    number: 5,
     label: 'Tugas Mandiri',
-    count: getMeetAssignments.value.length,
+    isDone: isActivityDone(meet.value, 'assignment'),
     active: currentCategory.value === 'assignment',
     url: currentCategory.value === 'assignment' ? '#' : (getMeetAssignments.value.length > 0 ? `/student/assignments/${getMeetAssignments.value[0].id}` : `/elearning/courses/${courseId.value}?meet=${meet.value?.meeting_number}&activity=assignment`)
   },
   {
     key: 'posttest',
-    number: 6,
     label: 'Posttest',
-    count: getMeetPosttests.value.length,
+    isDone: isActivityDone(meet.value, 'posttest'),
     active: currentCategory.value === 'posttest',
     url: currentCategory.value === 'posttest' ? '#' : (getMeetPosttests.value.length > 0 ? `/student/quizzes/${getMeetPosttests.value[0].id}/onboarding` : `/elearning/courses/${courseId.value}?meet=${meet.value?.meeting_number}&activity=posttest`)
   },
@@ -192,121 +189,18 @@ onMounted(fetchData)
 <template>
   <div class="flex min-h-[calc(100vh-64px)] w-full bg-slate-50/50">
     
-    <!-- 1. LEFT SIDEBAR: IDENTICAL TO DASHBOARD & COURSE PAGE -->
-    <aside
-      v-show="isSidebarOpen"
-      class="w-64 sm:w-72 border-r border-slate-200 bg-white shrink-0 p-4 space-y-4 flex flex-col justify-between transition-all"
-    >
-      <div class="space-y-3">
-        <!-- Sidebar Header Title matching Dashboard Courses List -->
-        <div class="flex items-center justify-between">
-          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Courses List
-          </h2>
-          <span
-            v-if="meet"
-            class="text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-50 text-[#1565c0] border border-blue-200 shadow-2xs"
-          >
-            P{{ meet.meeting_number }}
-          </span>
-        </div>
+    <!-- 1. LEFT SIDEBAR COMPONENT -->
+    <StudentActivitySidebar
+      :meet="meet"
+      :subject-name="subjectName"
+      :teacher-name="teacherName"
+      :class-name="className"
+      :course-id="courseId"
+      :current-category="currentCategory"
+      :loading="loading"
+      :meta-text="`${questionsCount} Soal • ${durationMinutes}m`"
+    />
 
-        <!-- Search Input Sidebar identical to dashboard -->
-        <div class="relative">
-          <input
-            v-model="sidebarSearch"
-            type="text"
-            placeholder="Pencarian aktivitas..."
-            class="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-blue-600 transition font-medium text-slate-800 placeholder-slate-400"
-          />
-          <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-        </div>
-
-        <!-- Sesi Pertemuan Active Info Card -->
-        <div v-if="loading" class="space-y-2 py-2">
-          <AppSkeleton height="h-20" class="rounded-xl" />
-        </div>
-        <div v-else-if="meet" class="p-3 bg-blue-50/60 rounded-xl border border-blue-200/60 space-y-1.5">
-          <div class="text-[10px] font-black uppercase tracking-wider text-blue-700">
-            {{ subjectName }}
-          </div>
-          <div class="text-xs font-extrabold text-slate-900 leading-tight">
-            Pertemuan {{ meet.meeting_number }}: {{ meet.title }}
-          </div>
-          <div class="text-[11px] text-slate-600 font-medium">
-            {{ className }} • {{ teacherName }}
-          </div>
-          <div class="text-[10px] text-slate-400 pt-1 border-t border-blue-100 flex items-center justify-between">
-            <span>{{ questionsCount }} Soal • {{ durationMinutes }}m</span>
-            <span class="text-emerald-700 font-bold">● Terhubung</span>
-          </div>
-        </div>
-
-        <!-- 6 Aktivitas Belajar Standard LMS Dropdown / Menu -->
-        <div v-if="meet" class="space-y-1.5 pt-1">
-          <div class="flex items-center justify-between px-1 mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Aktivitas Belajar
-            </span>
-            <span class="text-[10px] text-slate-500 font-semibold">P{{ meet.meeting_number }}</span>
-          </div>
-
-          <div class="space-y-1">
-            <template v-for="act in activityMenuItems" :key="act.key">
-              <div
-                v-if="act.active"
-                class="p-2 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between text-xs font-bold text-[#1565c0]"
-              >
-                <span class="flex items-center gap-2 truncate">
-                  <span class="w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center shrink-0 bg-[#1565c0] text-white">
-                    {{ act.number }}
-                  </span>
-                  <span class="truncate">{{ act.label }}</span>
-                </span>
-                <span class="text-[10px] bg-blue-100 text-[#1565c0] px-1.5 py-0.5 rounded-md shrink-0 font-semibold">Aktif</span>
-              </div>
-
-              <NuxtLink
-                v-else
-                :to="act.url"
-                class="p-2 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200 flex items-center justify-between text-xs font-medium text-slate-700 transition group"
-              >
-                <span class="flex items-center gap-2 truncate">
-                  <span class="w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center shrink-0 bg-slate-200 text-slate-700 group-hover:bg-blue-100 group-hover:text-blue-800">
-                    {{ act.number }}
-                  </span>
-                  <span class="truncate">{{ act.label }}</span>
-                </span>
-                <span v-if="act.count > 0" class="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.2 rounded-md shrink-0 font-semibold">
-                  {{ act.count }}
-                </span>
-                <span v-else class="text-[10px] text-slate-300 group-hover:text-[#1565c0]">➔</span>
-              </NuxtLink>
-            </template>
-          </div>
-        </div>
-      </div>
-
-      <!-- Bottom of Sidebar: Navigasi Kembali ke Kursus & Dashboard -->
-      <div class="pt-3 border-t border-slate-100 space-y-2">
-        <NuxtLink
-          :to="courseId ? `/elearning/courses/${courseId}` : '/student/dashboard'"
-          class="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-blue-200 hover:border-blue-300 bg-blue-50 hover:bg-blue-100 text-[#1565c0] text-xs font-bold transition shadow-2xs group"
-        >
-          <span class="group-hover:-translate-x-0.5 transition-transform">←</span>
-          <span>Kembali ke Kursus</span>
-        </NuxtLink>
-
-        <NuxtLink
-          to="/student/dashboard"
-          class="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-slate-500 hover:text-slate-800 text-xs font-medium transition"
-        >
-          <span>Dashboard Utama</span>
-        </NuxtLink>
-      </div>
-    </aside>
 
     <!-- 2. RIGHT MAIN CONTENT AREA: IDENTICAL TO DASHBOARD MAIN AREA -->
     <div class="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden max-w-7xl w-full">
@@ -351,11 +245,25 @@ onMounted(fetchData)
       <div v-else-if="quiz" class="space-y-6">
         
         <!-- Header Info Card -->
-        <div class="bg-white rounded-2xl border border-slate-200/80 p-6 sm:p-7 shadow-xs space-y-4">
+        <div
+          class="bg-white rounded-2xl border p-6 sm:p-7 shadow-xs space-y-4 transition"
+          :class="(isSubmitted || isQuizCompleted(quiz))
+            ? 'border-2 border-emerald-500 shadow-md ring-2 ring-emerald-100/80 bg-emerald-50/10'
+            : 'border-slate-200/80'"
+        >
           <div>
-            <h2 class="text-lg sm:text-xl font-extrabold text-slate-900">
-              {{ quiz.title }}
-            </h2>
+            <div class="flex items-center gap-2">
+              <h2 class="text-lg sm:text-xl font-extrabold text-slate-900">
+                {{ quiz.title }}
+              </h2>
+              <span
+                v-if="isSubmitted || isQuizCompleted(quiz)"
+                class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"
+              >
+                <span>✓</span>
+                <span>Sudah Dikerjakan</span>
+              </span>
+            </div>
             <p v-if="quiz.instructions" class="text-xs sm:text-sm text-slate-600 leading-relaxed whitespace-pre-line bg-slate-50/80 p-4 rounded-xl border border-slate-200/60 mt-3 font-normal">
               {{ quiz.instructions }}
             </p>

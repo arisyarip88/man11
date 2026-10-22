@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Quiz;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class QuizController extends Controller
 {
@@ -105,6 +106,8 @@ class QuizController extends Controller
                         'id'             => $item->id,
                         'type'           => $item->type,
                         'question'       => $item->question,
+                        'image_url'      => $item->image_url,
+                        'image_meta'     => $item->image_meta,
                         'options'        => $item->options,
                         'data'           => $item->data,
                         'correct_answer' => $item->correct_answer,
@@ -236,6 +239,8 @@ class QuizController extends Controller
                 'id'             => $q['id'] ?? null,
                 'type'           => $type,
                 'question'       => $q['question'] ?? '',
+                'image_url'      => !empty($q['image_url']) ? $q['image_url'] : null,
+                'image_meta'     => !empty($q['image_meta']) ? $q['image_meta'] : null,
                 'options'        => $q['options'] ?? [],
                 'data'           => $q['data'] ?? null,
                 'correct_answer' => $q['correct_answer'] ?? null,
@@ -264,6 +269,93 @@ class QuizController extends Controller
         }
 
         return [$questions, $totalWeight];
+    }
+
+    public function uploadQuestionImage(Request $request)
+    {
+        $request->validate([
+            'image'    => 'required|file|mimes:jpeg,png,jpg,webp,svg|max:2048',
+            'alt_text' => 'nullable|string|max:255',
+        ]);
+
+        $file = $request->file('image');
+        $extension = strtolower($file->getClientOriginalExtension());
+        $yearMonth = date('Y/m');
+        $targetExt = $extension === 'svg' ? 'svg' : 'webp';
+        $filename = 'q_img_' . Str::random(24) . '.' . $targetExt;
+        $relativeDir = "quiz_questions/{$yearMonth}";
+        $destinationDir = storage_path("app/public/{$relativeDir}");
+
+        if (!file_exists($destinationDir)) {
+            mkdir($destinationDir, 0755, true);
+        }
+
+        $fullPath = "{$destinationDir}/{$filename}";
+        $meta = [
+            'original_name' => $file->getClientOriginalName(),
+            'alt_text'      => $request->input('alt_text', 'Ilustrasi pendukung soal'),
+            'size_kb'       => round($file->getSize() / 1024, 1),
+        ];
+
+        if ($extension === 'svg') {
+            $file->move($destinationDir, $filename);
+            $meta['aspect_ratio'] = 'auto';
+            $meta['format'] = 'svg';
+        } else {
+            $src = null;
+            if (in_array($extension, ['jpg', 'jpeg'])) {
+                $src = @imagecreatefromjpeg($file->getRealPath());
+            } elseif ($extension === 'png') {
+                $src = @imagecreatefrompng($file->getRealPath());
+                if ($src) {
+                    imagealphablending($src, true);
+                    imagesavealpha($src, true);
+                }
+            } elseif ($extension === 'webp') {
+                $src = @imagecreatefromwebp($file->getRealPath());
+            }
+
+            if ($src) {
+                $w = imagesx($src);
+                $h = imagesy($src);
+                $maxDim = 1200;
+
+                if ($w > $maxDim || $h > $maxDim) {
+                    $ratio = min($maxDim / $w, $maxDim / $h);
+                    $newW = (int) round($w * $ratio);
+                    $newH = (int) round($h * $ratio);
+
+                    $target = imagecreatetruecolor($newW, $newH);
+                    imagealphablending($target, false);
+                    imagesavealpha($target, true);
+                    imagecopyresampled($target, $src, 0, 0, 0, 0, $newW, $newH, $w, $h);
+                    imagedestroy($src);
+                    $src = $target;
+                    $w = $newW;
+                    $h = $newH;
+                }
+
+                imagewebp($src, $fullPath, 82);
+                imagedestroy($src);
+
+                $meta['width'] = $w;
+                $meta['height'] = $h;
+                $meta['aspect_ratio'] = round($w / max(1, $h), 2);
+                $meta['size_kb'] = round(filesize($fullPath) / 1024, 1);
+                $meta['format'] = 'webp';
+            } else {
+                $file->storeAs($relativeDir, $filename, 'public');
+            }
+        }
+
+        $imageUrl = "/storage/{$relativeDir}/{$filename}";
+
+        return response()->json([
+            'success'   => true,
+            'message'   => 'Gambar soal berhasil diunggah dan dioptimalkan',
+            'image_url' => $imageUrl,
+            'meta'      => $meta,
+        ], 201);
     }
 
     public function destroy($id)

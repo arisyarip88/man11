@@ -569,7 +569,7 @@ const getEmbedYoutubeUrl = (url) => {
                   <NuxtLink 
                     v-if="!canManageLearning && q.quiz_type === 'multiple_choice'" 
                     :to="`/student/quizzes/${q.id}/exam`"
-                    class="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    class="px-5 py-2.5 bg-brand-700 hover:bg-brand-800 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
                   >
                     <span>Mulai Ujian CBT</span>
                     <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -581,7 +581,7 @@ const getEmbedYoutubeUrl = (url) => {
                   <button 
                     v-else-if="!canManageLearning"
                     @click="openSubmitModal(q)" 
-                    class="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 transition"
+                    class="px-4 py-2 bg-brand-700 text-white text-xs font-bold rounded-xl hover:bg-brand-800 transition cursor-pointer"
                   >
                     Kumpulkan Tugas
                   </button>
@@ -590,9 +590,9 @@ const getEmbedYoutubeUrl = (url) => {
                   <NuxtLink 
                     v-if="canManageLearning && q.quiz_type === 'multiple_choice'" 
                     :to="`/teacher/quizzes/${q.id}/grading`"
-                    class="px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition"
+                    class="px-4 py-2 bg-brand-50 hover:bg-brand-100 text-brand-900 border border-brand-200 text-xs font-bold rounded-xl transition"
                   >
-                    Koreksi & Nilai CBT 📊
+                    Koreksi & Nilai CBT
                   </NuxtLink>
                 </div>
               </div>
@@ -649,7 +649,7 @@ const getEmbedYoutubeUrl = (url) => {
                 <div class="flex justify-between items-center text-xs">
                   <div class="flex items-center gap-2">
                     <span class="font-bold text-slate-900">{{ disc.teacher?.name || disc.student?.name || 'Pengguna' }}</span>
-                    <span class="px-2 py-0.5 text-[9px] font-bold rounded-full" :class="disc.teacher ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'">
+                    <span class="px-2 py-0.5 text-[9px] font-bold rounded-full" :class="disc.teacher ? 'bg-brand-100 text-brand-900' : 'bg-slate-100 text-slate-700'">
                       {{ disc.teacher ? 'GURU' : 'SISWA' }}
                     </span>
                   </div>
@@ -699,35 +699,17 @@ const getEmbedYoutubeUrl = (url) => {
               </div>
             </div>
 
-            <!-- Jika Siswa Belum Presensi -->
+            <!-- Jika Presensi Belum Dicatat Guru -->
             <div v-else class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
-                <p class="text-[11px] font-bold text-amber-600 uppercase tracking-wider">Presensi Kehadiran Siswa</p>
-                <h4 class="text-lg font-extrabold text-slate-900 mt-0.5">Anda belum melakukan presensi</h4>
-                <p class="text-xs text-slate-500 mt-1">Silakan konfirmasi kehadiran Anda pada sesi pertemuan ini.</p>
+                <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Status Kehadiran Pertemuan</p>
+                <h4 class="text-base font-extrabold text-slate-800 mt-0.5">Belum Dicatat oleh Guru</h4>
+                <p class="text-xs text-slate-500 mt-1">Presensi kehadiran siswa dicatat dan dikonfirmasi langsung oleh guru pengampu di kelas.</p>
               </div>
               <div class="flex items-center gap-2">
-                <button
-                  @click="handleCheckIn('H')"
-                  :disabled="checkingIn"
-                  class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  <span>✓ Hadir Sekarang</span>
-                </button>
-                <button
-                  @click="handleCheckIn('I', 'Izin Mandiri Siswa')"
-                  :disabled="checkingIn"
-                  class="px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold rounded-xl transition disabled:opacity-50"
-                >
-                  <span>ℹ Izin</span>
-                </button>
-                <button
-                  @click="handleCheckIn('S', 'Izin Sakit Siswa')"
-                  :disabled="checkingIn"
-                  class="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold rounded-xl transition disabled:opacity-50"
-                >
-                  <span>✢ Sakit</span>
-                </button>
+                <span class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                  Menunggu Presensi Guru
+                </span>
               </div>
             </div>
           </div>
@@ -735,23 +717,23 @@ const getEmbedYoutubeUrl = (url) => {
           <!-- Quick Stats Grid -->
           <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Siswa</span>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-600">Total Siswa</span>
               <p class="text-2xl font-black text-slate-900 mt-1">{{ attendanceStats.total }}</p>
             </div>
             <div class="bg-emerald-50/80 rounded-2xl p-4 border border-emerald-100/80 shadow-xs">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Hadir (H)</span>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Hadir (H)</span>
               <p class="text-2xl font-black text-emerald-700 mt-1">{{ attendanceStats.H }}</p>
             </div>
             <div class="bg-amber-50/80 rounded-2xl p-4 border border-amber-100/80 shadow-xs">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Sakit (S)</span>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-amber-800">Sakit (S)</span>
               <p class="text-2xl font-black text-amber-700 mt-1">{{ attendanceStats.S }}</p>
             </div>
             <div class="bg-sky-50/80 rounded-2xl p-4 border border-sky-100/80 shadow-xs">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-sky-700">Izin (I)</span>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-sky-800">Izin (I)</span>
               <p class="text-2xl font-black text-sky-700 mt-1">{{ attendanceStats.I }}</p>
             </div>
             <div class="bg-rose-50/80 rounded-2xl p-4 border border-rose-100/80 shadow-xs col-span-2 sm:col-span-1">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-rose-700">Alpa (A)</span>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-rose-800">Alpa (A)</span>
               <p class="text-2xl font-black text-rose-700 mt-1">{{ attendanceStats.A }}</p>
             </div>
           </div>

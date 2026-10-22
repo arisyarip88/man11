@@ -82,6 +82,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('meets', MeetController::class);
     Route::apiResource('materials', MaterialController::class);
 
+    Route::post('/quizzes/upload-question-image', [QuizController::class, 'uploadQuestionImage']);
     Route::apiResource('quizzes', QuizController::class);
     Route::post('/quizzes/submit', [QuizSubmissionController::class, 'submit']);
     Route::put('/submissions/{id}/grade', [QuizSubmissionController::class, 'grade']);

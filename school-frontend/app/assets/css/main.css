@@ -15,18 +15,31 @@
   --color-brand-900: #10361c;
   --color-brand-950: #081e0f;
 
-  /* Aliasing emerald-* to MAN 11 brand palette for total system-wide coherence */
-  --color-emerald-50: #f2fbf5;
-  --color-emerald-100: #e1f7e9;
-  --color-emerald-200: #c3eed3;
-  --color-emerald-300: #a3e3ba;
-  --color-emerald-400: #86d9a0;
-  --color-emerald-500: #59c27b;
-  --color-emerald-600: #3ba560;
-  --color-emerald-700: #287843;
-  --color-emerald-800: #1b522d;
-  --color-emerald-900: #10361c;
-  --color-emerald-950: #081e0f;
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-200: #a7f3d0;
+  --color-success-700: #047857;
+  --color-success-800: #065f46;
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-700: #b45309;
+  --color-warning-800: #92400e;
+  --color-danger-50: #fff1f2;
+  --color-danger-100: #ffe4e6;
+  --color-danger-200: #fecdd3;
+  --color-danger-700: #be123c;
+  --color-danger-800: #9f1239;
+  --color-info-50: #f0f9ff;
+  --color-info-100: #e0f2fe;
+  --color-info-200: #bae6fd;
+  --color-info-700: #0369a1;
+  --color-info-800: #075985;
+
+  --radius-control: 0.75rem;
+  --radius-surface: 1rem;
+  --shadow-surface: 0 1px 2px rgb(15 23 42 / 0.05);
+  --shadow-surface-raised: 0 4px 12px rgb(15 23 42 / 0.08);
 }
 
 :root {
@@ -41,23 +54,48 @@
   --brand-800: #1b522d;
   --brand-900: #10361c;
   --brand-950: #081e0f;
+  --ui-page: #f8fafc;
+  --ui-surface: #ffffff;
+  --ui-border: #e2e8f0;
+  --ui-text: #1e293b;
+  --ui-muted: #64748b;
 }
 
-/* Accessibility & Human-Centered Standards (Anti-Slop R-32, R-25) */
 html {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Accessible focus outline indicator */
+body {
+  min-width: 320px;
+  background: var(--ui-page);
+  color: var(--ui-text);
+}
+
+::selection {
+  background: var(--brand-200);
+  color: var(--brand-950);
+}
+
 :focus-visible {
   outline: 2px solid var(--brand-700);
   outline-offset: 2px;
 }
 
-/* Minimum Touch Target standard for interactive mobile buttons (Anti-Slop R-03) */
 .min-tap-target {
   min-height: 44px;
   min-width: 44px;
+}
+
+.ui-control {
+  min-height: 44px;
+  border-radius: var(--radius-control);
+}
+
+.ui-surface {
+  border: 1px solid color-mix(in srgb, var(--ui-border) 80%, transparent);
+  border-radius: var(--radius-surface);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-surface);
 }

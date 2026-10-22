@@ -10,6 +10,14 @@ const quizId = computed(() => route.params.id)
 const config = useRuntimeConfig()
 const token = useCookie<string | null>('auth_token')
 const apiBase = config.public.apiBase || 'http://localhost:8000/api'
+const storageBase = config.public.storageBase || 'http://localhost:8000/storage'
+
+const getFullUrl = (url: string | null | undefined) => {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  const cleanPath = url.replace(/^\/storage\/?/, '')
+  return `${storageBase}/${cleanPath}`
+}
 
 interface SubmissionItem {
   id: number
@@ -645,6 +653,19 @@ const submitGrading = async () => {
                 <span class="text-[10px] text-slate-400 font-semibold">Bobot: {{ q.weight }} Poin</span>
               </div>
               <p class="text-slate-800 font-medium">{{ q.question }}</p>
+
+              <!-- Lampiran Gambar Soal jika ada -->
+              <div v-if="q.image_url" class="max-w-md my-2 rounded-2xl overflow-hidden border border-slate-200/90 bg-slate-50 p-2 shadow-2xs">
+                <img
+                  :src="getFullUrl(q.image_url)"
+                  :alt="q.image_meta?.alt_text || 'Diagram soal'"
+                  class="max-h-52 w-auto rounded-xl object-contain mx-auto"
+                  loading="lazy"
+                />
+                <div v-if="q.image_meta?.alt_text" class="text-[11px] text-slate-500 text-center mt-1.5 italic font-medium">
+                  {{ q.image_meta.alt_text }}
+                </div>
+              </div>
 
               <!-- Jawaban Siswa per Tipe Soal -->
               <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">

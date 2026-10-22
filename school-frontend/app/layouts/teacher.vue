@@ -2,9 +2,14 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 const { user, logout, hasRole } = useAuth()
+const config = useRuntimeConfig()
+const token = useCookie<string | null>('auth_token')
+const apiBase = config.public.apiBase || 'http://localhost:8000/api'
+
 const isSidebarOpen = ref(false)
 const isProfileOpen = ref(false)
 const profileDropdownRef = ref(null)
+const activeSemester = ref<any>(null)
 
 const teacherName = computed(() => user.value?.name || user.value?.username || 'Guru Pengampu')
 const teacherNip = computed(() => user.value?.teacher?.nip || user.value?.nip || '198912092019031007')
@@ -18,8 +23,19 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
+  try {
+    const res: any = await $fetch(`${apiBase}/semesters`, {
+      headers: { Authorization: `Bearer ${token.value}`, Accept: 'application/json' }
+    })
+    const list = res?.data?.data || res?.data || res || []
+    if (Array.isArray(list) && list.length > 0) {
+      activeSemester.value = list.find((s: any) => s.is_active) || list[0]
+    }
+  } catch (err) {
+    // fallback silent
+  }
 })
 
 onUnmounted(() => {
@@ -130,7 +146,7 @@ const supervisiMenuItems = [
         <!-- Logo & Brand Header -->
         <div class="h-16 flex items-center justify-between px-5 border-b border-slate-100">
           <NuxtLink to="/teacher/dashboard" class="flex items-center gap-3">
-            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-700 to-emerald-500 flex items-center justify-center text-white font-bold shadow-md shadow-emerald-600/20">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-800 to-brand-600 flex items-center justify-center text-white font-bold shadow-md shadow-brand-700/20">
               11
             </div>
             <div>
@@ -140,6 +156,7 @@ const supervisiMenuItems = [
           </NuxtLink>
           <button
             @click="isSidebarOpen = false"
+            aria-label="Tutup menu sidebar"
             class="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,15 +166,17 @@ const supervisiMenuItems = [
         </div>
 
         <!-- Academic Year Active Badge -->
-        <div class="px-5 py-3 bg-emerald-50/70 border-b border-emerald-100/50 flex items-center justify-between">
+        <div class="px-5 py-3 bg-brand-50/70 border-b border-brand-100/50 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span class="relative flex h-2 w-2">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-brand-500"></span>
             </span>
-            <span class="text-[11px] font-bold text-emerald-800">TA 2025/2026 Ganjil</span>
+            <span class="text-[11px] font-bold text-brand-900">
+              {{ activeSemester ? `TA ${activeSemester.academic_year} (${activeSemester.semester_type})` : 'TA 2025/2026 Ganjil' }}
+            </span>
           </div>
-          <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-200/60 text-emerald-900">Aktif</span>
+          <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-brand-200/60 text-brand-950">Aktif</span>
         </div>
 
         <!-- Navigation Links Menu -->
@@ -172,8 +191,8 @@ const supervisiMenuItems = [
                 v-for="item in kbmMenuItems"
                 :key="item.to"
                 :to="item.to"
-                class="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-all group"
-                active-class="bg-emerald-600 !text-white shadow-sm shadow-emerald-600/30"
+                class="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-brand-800 hover:bg-brand-50 transition-all group"
+                active-class="bg-brand-700 !text-white shadow-xs"
               >
                 <div class="flex items-center gap-3">
                   <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -183,7 +202,7 @@ const supervisiMenuItems = [
                 </div>
                 <span
                   v-if="item.badge"
-                  class="text-[9px] px-1.5 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800 group-hover:bg-emerald-200"
+                  class="text-[9px] px-1.5 py-0.5 rounded font-bold bg-brand-100 text-brand-900 group-hover:bg-brand-200"
                 >
                   {{ item.badge }}
                 </span>
@@ -201,8 +220,8 @@ const supervisiMenuItems = [
                 v-for="item in adminMenuItems"
                 :key="item.to"
                 :to="item.to"
-                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-all group"
-                active-class="bg-emerald-600 !text-white shadow-sm shadow-emerald-600/30"
+                class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-brand-800 hover:bg-brand-50 transition-all group"
+                active-class="bg-brand-700 !text-white shadow-xs"
               >
                 <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
@@ -222,8 +241,8 @@ const supervisiMenuItems = [
                 v-for="item in resourceMenuItems"
                 :key="item.to"
                 :to="item.to"
-                class="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-all group"
-                active-class="bg-emerald-600 !text-white shadow-sm shadow-emerald-600/30"
+                class="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-brand-800 hover:bg-brand-50 transition-all group"
+                active-class="bg-brand-700 !text-white shadow-xs"
               >
                 <div class="flex items-center gap-3">
                   <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -252,8 +271,8 @@ const supervisiMenuItems = [
                 v-for="item in supervisiMenuItems"
                 :key="item.to"
                 :to="item.to"
-                class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-emerald-700 hover:bg-emerald-50/60 transition-all group"
-                active-class="bg-emerald-600 !text-white shadow-sm shadow-emerald-600/30"
+                class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-brand-800 hover:bg-brand-50 transition-all group"
+                active-class="bg-brand-700 !text-white shadow-xs"
               >
                 <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon" />
@@ -278,6 +297,7 @@ const supervisiMenuItems = [
             </div>
             <button
               @click="logout"
+              aria-label="Keluar dari akun pengajar"
               title="Keluar"
               class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
             >
@@ -297,6 +317,7 @@ const supervisiMenuItems = [
         <div class="flex items-center gap-3">
           <button
             @click="isSidebarOpen = true"
+            aria-label="Buka menu navigasi sidebar"
             class="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 focus:outline-none"
           >
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

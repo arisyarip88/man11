@@ -173,73 +173,16 @@ class AttendanceController extends Controller
     }
 
     /**
-     * Siswa melakukan presensi mandiri (self check-in) pada pertemuan aktif
+     * Siswa melakukan presensi mandiri (Dinonaktifkan - Presensi dicatat langsung oleh guru)
      */
     public function selfCheckIn(Request $request, $meetId)
     {
-        $meet = Meet::findOrFail($meetId);
-        $user = $request->user();
-
-        $student = null;
-        if ($user) {
-            $student = \App\Models\Student::where('nis', $user->username)->orWhere('email', $user->email)->first();
-        }
-
-        if (!$student) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Hanya akun siswa yang dapat melakukan presensi mandiri.'
-            ], 403);
-        }
-
-        $validated = $request->validate([
-            'status' => 'nullable|in:H,S,I',
-            'notes'  => 'nullable|string|max:255',
-        ]);
-
-        $status = $validated['status'] ?? 'H';
-        $defaultNotes = $status === 'H' ? 'Presensi Mandiri Siswa' : ($status === 'S' ? 'Izin Sakit Mandiri' : 'Izin Siswa Mandiri');
-        $notes = !empty($validated['notes']) ? $validated['notes'] : $defaultNotes;
-
-        $meet->load('course');
-        $teacherId = $meet->course?->teacher_id;
-        if (!$teacherId) {
-            $firstTeacher = \App\Models\Teacher::first();
-            $teacherId = $firstTeacher ? $firstTeacher->id : 1;
-        }
-
-        $attendance = MeetAttendance::updateOrCreate(
-            [
-                'meet_id'    => $meet->id,
-                'student_id' => $student->id,
-            ],
-            [
-                'status'      => $status,
-                'notes'       => $notes,
-                'recorded_by' => $teacherId,
-            ]
-        );
-
-        $labels = [
-            'H' => 'Hadir',
-            'S' => 'Sakit',
-            'I' => 'Izin',
-            'A' => 'Alpa',
-        ];
-
         return response()->json([
-            'success' => true,
-            'message' => 'Presensi berhasil dicatat!',
-            'data'    => [
-                'meet_id'      => $meet->id,
-                'student_id'   => $student->id,
-                'status'       => $attendance->status,
-                'status_label' => $labels[$attendance->status] ?? $attendance->status,
-                'notes'        => $attendance->notes,
-                'recorded_at'  => $attendance->updated_at,
-            ]
-        ]);
+            'success' => false,
+            'message' => 'Fitur presensi mandiri siswa telah dinonaktifkan. Kehadiran siswa dicatat langsung oleh guru di kelas.',
+        ], 403);
     }
+
 
     /**
      * Rekap Presensi Siswa secara Kumulatif Lintas Seluruh Kelas & Pertemuan

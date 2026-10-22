@@ -123,7 +123,8 @@ class CourseController extends Controller
             'subject', 
             'teacher', 
             'meets.materials', 
-            'meets.quizzes.submissions'
+            'meets.quizzes.submissions',
+            'meets.discussions.student'
         ])
         ->withCount('meets')
         ->findOrFail($id);

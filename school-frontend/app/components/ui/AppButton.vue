@@ -24,7 +24,7 @@ const variantClasses = computed(() => {
     case 'primary':
       return 'bg-brand-700 hover:bg-brand-800 active:bg-brand-900 text-white shadow-xs border border-brand-800'
     case 'secondary':
-      return 'bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 border border-slate-200'
+      return 'bg-brand-50 hover:bg-brand-100 active:bg-brand-200 text-brand-900 border border-brand-200'
     case 'outline':
       return 'bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-800 border border-slate-300 shadow-2xs'
     case 'danger':

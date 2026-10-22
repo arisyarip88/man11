@@ -267,6 +267,13 @@ const fetchCourseData = async () => {
 }
 
 // -------------------------------------------------------------------
+const {
+  isActivityDone,
+  isMaterialDownloaded,
+  markMaterialDownloaded,
+  isQuizCompleted
+} = useStudentActivityProgress()
+
 // Sidebar Activity Dropdown State & Methods (6 Menu Default LMS)
 // -------------------------------------------------------------------
 const expandedSidebarMeets = reactive<Record<number, boolean>>({})
@@ -278,12 +285,12 @@ const toggleSidebarMeet = (meet: any) => {
 }
 
 const getActivityMenuItems = (meet: any) => [
-  { key: 'pretest', number: 1, label: 'Pretest', count: getMeetPretests(meet).length },
-  { key: 'material', number: 2, label: 'Modul & Bahan Ajar', count: getMeetMaterials(meet).length },
-  { key: 'discussion', number: 3, label: 'Ruang Diskusi', count: getMeetDiscussions(meet).length },
-  { key: 'quiz', number: 4, label: 'Kuis Formatif', count: getMeetQuizzes(meet).length },
-  { key: 'assignment', number: 5, label: 'Tugas Mandiri', count: getMeetAssignments(meet).length },
-  { key: 'posttest', number: 6, label: 'Posttest', count: getMeetPosttests(meet).length },
+  { key: 'pretest', label: 'Pretest', isDone: isActivityDone(meet, 'pretest') },
+  { key: 'material', label: 'Modul & Bahan Ajar', isDone: isActivityDone(meet, 'material') },
+  { key: 'discussion', label: 'Ruang Diskusi', isDone: isActivityDone(meet, 'discussion') },
+  { key: 'quiz', label: 'Kuis Formatif', isDone: isActivityDone(meet, 'quiz') },
+  { key: 'assignment', label: 'Tugas Mandiri', isDone: isActivityDone(meet, 'assignment') },
+  { key: 'posttest', label: 'Posttest', isDone: isActivityDone(meet, 'posttest') },
 ]
 
 // Select meeting and smooth scroll to specific activity
@@ -531,12 +538,6 @@ onMounted(() => {
                 </div>
               </div>
               <div class="shrink-0 flex items-center gap-1.5">
-                <span
-                  class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
-                  :class="countMeetActivities(meet) > 0 ? 'bg-blue-100/70 text-[#1565c0]' : 'bg-slate-100 text-slate-400'"
-                >
-                  {{ countMeetActivities(meet) }}
-                </span>
                 <svg
                   class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200"
                   :class="expandedSidebarMeets[meet.id] ? 'rotate-180 text-[#1565c0]' : ''"
@@ -549,40 +550,72 @@ onMounted(() => {
               </div>
             </button>
 
-            <!-- Dropdown 6 Aktivitas Belajar -->
+            <!-- Dropdown 6 Aktivitas Belajar (Tanpa Angka, Outline Hijau jika Selesai) -->
             <div
               v-show="expandedSidebarMeets[meet.id]"
-              class="px-2 pb-2 pt-1 border-t border-slate-100 space-y-0.5 bg-slate-50/60"
+              class="px-2 pb-2 pt-1 border-t border-slate-100 space-y-1 bg-slate-50/60"
             >
               <button
                 v-for="item in getActivityMenuItems(meet)"
                 :key="item.key"
                 type="button"
                 @click="selectSidebarActivity(meet, item.key)"
-                class="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-medium transition text-left group/act"
-                :class="activeMeetId === meet.id && activeActivityKey === item.key
-                  ? 'bg-white font-bold text-[#1565c0] shadow-2xs border border-blue-200/80'
-                  : 'text-slate-700 hover:text-blue-700 hover:bg-white'"
+                class="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition text-left group/act"
+                :class="[
+                  item.isDone
+                    ? 'border-2 border-emerald-500 bg-emerald-50/60 text-emerald-950 font-bold shadow-2xs'
+                    : (activeMeetId === meet.id && activeActivityKey === item.key
+                        ? 'bg-white font-bold text-[#1565c0] shadow-2xs border border-blue-200/80'
+                        : 'text-slate-700 hover:text-blue-700 hover:bg-white border border-transparent')
+                ]"
               >
                 <span class="flex items-center gap-2 truncate">
+                  <!-- Ikon Aktivitas Khusus (Tanpa Angka) -->
                   <span
-                    class="w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center shrink-0"
-                    :class="activeMeetId === meet.id && activeActivityKey === item.key
-                      ? 'bg-[#1565c0] text-white'
-                      : 'bg-slate-200/80 text-slate-700 group-hover/act:bg-blue-100 group-hover/act:text-blue-800'"
+                    class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition"
+                    :class="[
+                      item.isDone
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : (activeMeetId === meet.id && activeActivityKey === item.key
+                            ? 'bg-[#1565c0] text-white'
+                            : 'bg-slate-200/80 text-slate-600 group-hover/act:bg-blue-100 group-hover/act:text-blue-800')
+                    ]"
                   >
-                    {{ item.number }}
+                    <!-- Pretest -->
+                    <svg v-if="item.key === 'pretest'" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <!-- Modul & Bahan Ajar -->
+                    <svg v-else-if="item.key === 'material'" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <!-- Ruang Diskusi -->
+                    <svg v-else-if="item.key === 'discussion'" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <!-- Kuis Formatif -->
+                    <svg v-else-if="item.key === 'quiz'" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    <!-- Tugas Mandiri -->
+                    <svg v-else-if="item.key === 'assignment'" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <!-- Posttest -->
+                    <svg v-else-if="item.key === 'posttest'" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
                   </span>
                   <span class="truncate">{{ item.label }}</span>
                 </span>
+                
+                <!-- Indikator Centang Hijau saat Sudah Dikerjakan -->
                 <span
-                  v-if="item.count > 0"
-                  class="text-[10px] px-1.5 py-0.2 rounded-md font-semibold shrink-0 ml-1"
-                  :class="activeMeetId === meet.id && activeActivityKey === item.key
-                    ? 'bg-blue-100 text-[#1565c0]'
-                    : 'bg-slate-100 text-slate-500'"
+                  v-if="item.isDone"
+                  class="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black shrink-0 shadow-2xs"
+                  title="Aktivitas telah selesai dikerjakan"
                 >
-                  {{ item.count }}
+                  ✓
                 </span>
               </button>
             </div>
@@ -780,17 +813,38 @@ onMounted(() => {
               <!-- 1. PRETEST (Asesmen Diagnostik Awal) -->
               <div
                 :id="`meet-${meet.id}-pretest`"
-                class="border rounded-xl p-4 bg-white space-y-3 shadow-2xs transition"
-                :class="activeMeetId === meet.id && activeActivityKey === 'pretest' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'"
+                class="border rounded-2xl p-5 bg-white space-y-3.5 shadow-xs transition"
+                :class="isActivityDone(meet, 'pretest')
+                  ? 'border-2 border-emerald-500 shadow-md ring-2 ring-emerald-100/80 bg-emerald-50/15'
+                  : (activeMeetId === meet.id && activeActivityKey === 'pretest' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200')"
               >
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <span class="w-6 h-6 rounded-md bg-blue-50 text-[#1565c0] flex items-center justify-center font-bold text-xs border border-blue-100">1</span>
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2.5">
+                    <span
+                      class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs border transition"
+                      :class="isActivityDone(meet, 'pretest') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-[#1565c0] border-blue-100'"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </span>
                     <span>Pretest (Asesmen Diagnostik Awal)</span>
                   </span>
-                  <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md" :class="getMeetPretests(meet).length > 0 ? 'bg-blue-50 text-[#1565c0] border border-blue-100' : 'bg-slate-100 text-slate-500'">
-                    {{ getMeetPretests(meet).length > 0 ? `${getMeetPretests(meet).length} Butir` : 'Tidak Ada' }}
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      v-if="isActivityDone(meet, 'pretest')"
+                      class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                    >
+                      <span>✓</span>
+                      <span>Sudah Dikerjakan</span>
+                    </span>
+                    <span
+                      v-else-if="getMeetPretests(meet).length > 0"
+                      class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full"
+                    >
+                      Tersedia
+                    </span>
+                  </div>
                 </div>
 
                 <!-- Default text jika belum ada konten -->
@@ -801,10 +855,16 @@ onMounted(() => {
                   <div
                     v-for="pre in getMeetPretests(meet)"
                     :key="pre.id"
-                    class="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    class="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+                    :class="isQuizCompleted(pre) ? 'border-2 border-emerald-500 ring-1 ring-emerald-200/60 bg-emerald-50/25' : 'bg-slate-50/70 border-slate-200/80'"
                   >
                     <div>
-                      <div class="font-bold text-slate-800 text-xs">{{ pre.title }}</div>
+                      <div class="font-bold text-slate-800 text-xs flex items-center gap-2">
+                        <span>{{ pre.title }}</span>
+                        <span v-if="isQuizCompleted(pre)" class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          ✓ Selesai
+                        </span>
+                      </div>
                       <div class="text-[11px] text-slate-500 font-medium mt-0.5">
                         {{ pre.questions_count || 10 }} Soal • Durasi {{ pre.duration_minutes || 15 }} Menit • {{ getTimeWindowStatus(pre).info }}
                       </div>
@@ -812,11 +872,12 @@ onMounted(() => {
 
                     <div class="flex items-center gap-2">
                       <NuxtLink
-                        v-if="getQuizSubmission(pre)"
+                        v-if="isQuizCompleted(pre)"
                         :to="`/student/quizzes/${pre.id}/onboarding`"
-                        class="text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition"
+                        class="text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition shadow-2xs flex items-center gap-1"
                       >
-                        ✓ Nilai: {{ getQuizSubmission(pre).score !== null ? getQuizSubmission(pre).score : 'Terekam' }} (Detail)
+                        <span>✓ Nilai: {{ getQuizSubmission(pre)?.score !== null ? getQuizSubmission(pre)?.score : 'Terekam' }}</span>
+                        <span class="text-[11px] underline ml-1">Detail</span>
                       </NuxtLink>
                       <NuxtLink
                         v-else-if="getTimeWindowStatus(pre).isOpen"
@@ -837,17 +898,38 @@ onMounted(() => {
               <!-- 2. MODUL AJAR & BAHAN AJAR -->
               <div
                 :id="`meet-${meet.id}-material`"
-                class="border rounded-xl p-4 bg-white space-y-3 shadow-2xs transition"
-                :class="activeMeetId === meet.id && activeActivityKey === 'material' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'"
+                class="border rounded-2xl p-5 bg-white space-y-3.5 shadow-xs transition"
+                :class="isActivityDone(meet, 'material')
+                  ? 'border-2 border-emerald-500 shadow-md ring-2 ring-emerald-100/80 bg-emerald-50/15'
+                  : (activeMeetId === meet.id && activeActivityKey === 'material' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200')"
               >
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <span class="w-6 h-6 rounded-md bg-blue-50 text-[#1565c0] flex items-center justify-center font-bold text-xs border border-blue-100">2</span>
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2.5">
+                    <span
+                      class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs border transition"
+                      :class="isActivityDone(meet, 'material') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-[#1565c0] border-blue-100'"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                    </span>
                     <span>Modul & Bahan Ajar Guru</span>
                   </span>
-                  <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md" :class="getMeetMaterials(meet).length > 0 ? 'bg-blue-50 text-[#1565c0] border border-blue-100' : 'bg-slate-100 text-slate-500'">
-                    {{ getMeetMaterials(meet).length > 0 ? `${getMeetMaterials(meet).length} Berkas` : 'Tidak Ada' }}
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      v-if="isActivityDone(meet, 'material')"
+                      class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                    >
+                      <span>✓</span>
+                      <span>Modul Sudah Diunduh</span>
+                    </span>
+                    <span
+                      v-else-if="getMeetMaterials(meet).length > 0"
+                      class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full"
+                    >
+                      Tersedia
+                    </span>
+                  </div>
                 </div>
 
                 <!-- Default text jika belum ada materi -->
@@ -858,12 +940,23 @@ onMounted(() => {
                   <div
                     v-for="mat in getMeetMaterials(meet)"
                     :key="mat.id"
-                    class="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 flex items-center justify-between gap-3"
+                    class="p-3.5 rounded-xl border flex items-center justify-between gap-3 transition"
+                    :class="isMaterialDownloaded(mat.id) ? 'border-2 border-emerald-500 ring-1 ring-emerald-200/60 bg-emerald-50/25' : 'bg-slate-50/70 border-slate-200/80'"
                   >
                     <div class="flex items-center gap-2.5 truncate">
-                      <span class="text-[#1565c0] text-base">📄</span>
+                      <span class="text-base" :class="isMaterialDownloaded(mat.id) ? 'text-emerald-600' : 'text-[#1565c0]'">
+                        {{ isMaterialDownloaded(mat.id) ? '✓' : '📄' }}
+                      </span>
                       <div class="truncate">
-                        <div class="font-bold text-slate-800 text-xs truncate">{{ mat.title }}</div>
+                        <div class="font-bold text-slate-800 text-xs truncate flex items-center gap-2">
+                          <span class="truncate">{{ mat.title }}</span>
+                          <span
+                            v-if="isMaterialDownloaded(mat.id)"
+                            class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0"
+                          >
+                            Sudah Diunduh
+                          </span>
+                        </div>
                         <div class="text-[11px] text-slate-500 font-medium truncate mt-0.5">
                           {{ mat.type || 'Dokumen' }} • {{ mat.content || 'Materi Pembelajaran' }}
                         </div>
@@ -871,8 +964,21 @@ onMounted(() => {
                     </div>
 
                     <div class="flex items-center gap-2 shrink-0">
+                      <a
+                        v-if="mat.file_url"
+                        :href="mat.file_url"
+                        target="_blank"
+                        download
+                        @click="markMaterialDownloaded(mat.id)"
+                        class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 shadow-2xs cursor-pointer"
+                        :class="isMaterialDownloaded(mat.id) ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-700 hover:bg-slate-800 text-white'"
+                      >
+                        <span>{{ isMaterialDownloaded(mat.id) ? '✓ Unduh Ulang' : 'Unduh Modul' }}</span>
+                        <span>↓</span>
+                      </a>
                       <NuxtLink
                         :to="`/student/materials/${mat.id}`"
+                        @click="markMaterialDownloaded(mat.id)"
                         class="px-3.5 py-1.5 bg-[#1565c0] hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 shadow-2xs"
                       >
                         <span>Buka Modul</span>
@@ -886,17 +992,30 @@ onMounted(() => {
               <!-- 3. FORUM DISKUSI -->
               <div
                 :id="`meet-${meet.id}-discussion`"
-                class="border rounded-xl p-4 bg-white space-y-3 shadow-2xs transition"
-                :class="activeMeetId === meet.id && activeActivityKey === 'discussion' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'"
+                class="border rounded-2xl p-5 bg-white space-y-3.5 shadow-xs transition"
+                :class="isActivityDone(meet, 'discussion')
+                  ? 'border-2 border-emerald-500 shadow-md ring-2 ring-emerald-100/80 bg-emerald-50/15'
+                  : (activeMeetId === meet.id && activeActivityKey === 'discussion' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200')"
               >
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <span class="w-6 h-6 rounded-md bg-blue-50 text-[#1565c0] flex items-center justify-center font-bold text-xs border border-blue-100">3</span>
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2.5">
+                    <span
+                      class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs border transition"
+                      :class="isActivityDone(meet, 'discussion') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-[#1565c0] border-blue-100'"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                    </span>
                     <span>Ruang Diskusi & Tanya Jawab</span>
                   </span>
                   <div class="flex items-center gap-2">
-                    <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md" :class="getMeetDiscussions(meet).length > 0 ? 'bg-blue-50 text-[#1565c0] border border-blue-100' : 'bg-slate-100 text-slate-500'">
-                      {{ getMeetDiscussions(meet).length > 0 ? `${getMeetDiscussions(meet).length} Tanggapan` : '0 Pesan' }}
+                    <span
+                      v-if="isActivityDone(meet, 'discussion')"
+                      class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                    >
+                      <span>✓</span>
+                      <span>Sudah Berpartisipasi</span>
                     </span>
                     <NuxtLink
                       :to="`/student/discussions/${meet.id}`"
@@ -959,17 +1078,38 @@ onMounted(() => {
               <!-- 4. KUIS FORMATIF -->
               <div
                 :id="`meet-${meet.id}-quiz`"
-                class="border rounded-xl p-4 bg-white space-y-3 shadow-2xs transition"
-                :class="activeMeetId === meet.id && activeActivityKey === 'quiz' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'"
+                class="border rounded-2xl p-5 bg-white space-y-3.5 shadow-xs transition"
+                :class="isActivityDone(meet, 'quiz')
+                  ? 'border-2 border-emerald-500 shadow-md ring-2 ring-emerald-100/80 bg-emerald-50/15'
+                  : (activeMeetId === meet.id && activeActivityKey === 'quiz' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200')"
               >
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <span class="w-6 h-6 rounded-md bg-blue-50 text-[#1565c0] flex items-center justify-center font-bold text-xs border border-blue-100">4</span>
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2.5">
+                    <span
+                      class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs border transition"
+                      :class="isActivityDone(meet, 'quiz') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-[#1565c0] border-blue-100'"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                      </svg>
+                    </span>
                     <span>Kuis Formatif (Pemahaman)</span>
                   </span>
-                  <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md" :class="getMeetQuizzes(meet).length > 0 ? 'bg-blue-50 text-[#1565c0] border border-blue-100' : 'bg-slate-100 text-slate-500'">
-                    {{ getMeetQuizzes(meet).length > 0 ? `${getMeetQuizzes(meet).length} Kuis` : 'Tidak Ada' }}
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      v-if="isActivityDone(meet, 'quiz')"
+                      class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                    >
+                      <span>✓</span>
+                      <span>Sudah Dikerjakan</span>
+                    </span>
+                    <span
+                      v-else-if="getMeetQuizzes(meet).length > 0"
+                      class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full"
+                    >
+                      Tersedia
+                    </span>
+                  </div>
                 </div>
 
                 <!-- Default text jika belum ada kuis formatif -->
@@ -980,10 +1120,16 @@ onMounted(() => {
                   <div
                     v-for="quiz in getMeetQuizzes(meet)"
                     :key="quiz.id"
-                    class="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    class="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+                    :class="isQuizCompleted(quiz) ? 'border-2 border-emerald-500 ring-1 ring-emerald-200/60 bg-emerald-50/25' : 'bg-slate-50/70 border-slate-200/80'"
                   >
                     <div>
-                      <div class="font-bold text-slate-800 text-xs">{{ quiz.title }}</div>
+                      <div class="font-bold text-slate-800 text-xs flex items-center gap-2">
+                        <span>{{ quiz.title }}</span>
+                        <span v-if="isQuizCompleted(quiz)" class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          ✓ Selesai
+                        </span>
+                      </div>
                       <div class="text-[11px] text-slate-500 font-medium mt-0.5">
                         {{ quiz.questions_count || 10 }} Soal • Durasi {{ quiz.duration_minutes || 20 }} Menit • {{ getTimeWindowStatus(quiz).info }}
                       </div>
@@ -991,11 +1137,12 @@ onMounted(() => {
 
                     <div class="flex items-center gap-2">
                       <NuxtLink
-                        v-if="getQuizSubmission(quiz)"
+                        v-if="isQuizCompleted(quiz)"
                         :to="`/student/quizzes/${quiz.id}/onboarding`"
-                        class="text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition"
+                        class="text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition shadow-2xs flex items-center gap-1"
                       >
-                        ✓ Selesai (Skor: {{ getQuizSubmission(quiz).score !== null ? getQuizSubmission(quiz).score : 'Terekam' }})
+                        <span>✓ Nilai: {{ getQuizSubmission(quiz)?.score !== null ? getQuizSubmission(quiz)?.score : 'Terekam' }}</span>
+                        <span class="text-[11px] underline ml-1">Detail</span>
                       </NuxtLink>
                       <NuxtLink
                         v-else-if="getTimeWindowStatus(quiz).isOpen"
@@ -1016,17 +1163,38 @@ onMounted(() => {
               <!-- 5. TUGAS MANDIRI -->
               <div
                 :id="`meet-${meet.id}-assignment`"
-                class="border rounded-xl p-4 bg-white space-y-3 shadow-2xs transition"
-                :class="activeMeetId === meet.id && activeActivityKey === 'assignment' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'"
+                class="border rounded-2xl p-5 bg-white space-y-3.5 shadow-xs transition"
+                :class="isActivityDone(meet, 'assignment')
+                  ? 'border-2 border-emerald-500 shadow-md ring-2 ring-emerald-100/80 bg-emerald-50/15'
+                  : (activeMeetId === meet.id && activeActivityKey === 'assignment' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200')"
               >
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <span class="w-6 h-6 rounded-md bg-blue-50 text-[#1565c0] flex items-center justify-center font-bold text-xs border border-blue-100">5</span>
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2.5">
+                    <span
+                      class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs border transition"
+                      :class="isActivityDone(meet, 'assignment') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-[#1565c0] border-blue-100'"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                    </span>
                     <span>Tugas Mandiri (Pengumpulan File)</span>
                   </span>
-                  <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md" :class="getMeetAssignments(meet).length > 0 ? 'bg-blue-50 text-[#1565c0] border border-blue-100' : 'bg-slate-100 text-slate-500'">
-                    {{ getMeetAssignments(meet).length > 0 ? `${getMeetAssignments(meet).length} Tugas` : 'Tidak Ada' }}
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      v-if="isActivityDone(meet, 'assignment')"
+                      class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                    >
+                      <span>✓</span>
+                      <span>Sudah Dikumpulkan</span>
+                    </span>
+                    <span
+                      v-else-if="getMeetAssignments(meet).length > 0"
+                      class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full"
+                    >
+                      Tersedia
+                    </span>
+                  </div>
                 </div>
 
                 <!-- Default text jika belum ada tugas -->
@@ -1037,10 +1205,16 @@ onMounted(() => {
                   <div
                     v-for="asg in getMeetAssignments(meet)"
                     :key="asg.id"
-                    class="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    class="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+                    :class="isQuizCompleted(asg) ? 'border-2 border-emerald-500 ring-1 ring-emerald-200/60 bg-emerald-50/25' : 'bg-slate-50/70 border-slate-200/80'"
                   >
                     <div>
-                      <div class="font-bold text-slate-800 text-xs">{{ asg.title }}</div>
+                      <div class="font-bold text-slate-800 text-xs flex items-center gap-2">
+                        <span>{{ asg.title }}</span>
+                        <span v-if="isQuizCompleted(asg)" class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          ✓ Terkumpul
+                        </span>
+                      </div>
                       <div class="text-[11px] text-slate-500 font-medium mt-0.5">
                         Tenggat: {{ asg.end_time ? formatTimeNice(asg.end_time) : (asg.due_date ? formatTimeNice(asg.due_date) : 'Sesuai Jadwal') }}
                       </div>
@@ -1049,9 +1223,10 @@ onMounted(() => {
                     <div class="flex items-center gap-2">
                       <NuxtLink
                         :to="`/student/assignments/${asg.id}`"
-                        class="px-3.5 py-1.5 bg-[#1565c0] hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition shadow-2xs flex items-center gap-1.5"
+                        class="px-3.5 py-1.5 rounded-lg font-bold text-xs transition shadow-2xs flex items-center gap-1.5"
+                        :class="isQuizCompleted(asg) ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-[#1565c0] hover:bg-blue-700 text-white'"
                       >
-                        <span v-if="getQuizSubmission(asg)">✓ Terkumpul (Detail)</span>
+                        <span v-if="isQuizCompleted(asg)">✓ Terkumpul (Detail)</span>
                         <span v-else>Kumpulkan Tugas</span>
                         <span>➔</span>
                       </NuxtLink>
@@ -1063,17 +1238,38 @@ onMounted(() => {
               <!-- 6. POSTTEST (Asesmen Sumatif Pertemuan) -->
               <div
                 :id="`meet-${meet.id}-posttest`"
-                class="border rounded-xl p-4 bg-white space-y-3 shadow-2xs transition"
-                :class="activeMeetId === meet.id && activeActivityKey === 'posttest' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'"
+                class="border rounded-2xl p-5 bg-white space-y-3.5 shadow-xs transition"
+                :class="isActivityDone(meet, 'posttest')
+                  ? 'border-2 border-emerald-500 shadow-md ring-2 ring-emerald-100/80 bg-emerald-50/15'
+                  : (activeMeetId === meet.id && activeActivityKey === 'posttest' ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200')"
               >
-                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <span class="w-6 h-6 rounded-md bg-blue-50 text-[#1565c0] flex items-center justify-center font-bold text-xs border border-blue-100">6</span>
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <span class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2.5">
+                    <span
+                      class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs border transition"
+                      :class="isActivityDone(meet, 'posttest') ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-[#1565c0] border-blue-100'"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                    </span>
                     <span>Posttest (Asesmen Sumatif Pertemuan)</span>
                   </span>
-                  <span class="text-[10px] font-semibold px-2 py-0.5 rounded-md" :class="getMeetPosttests(meet).length > 0 ? 'bg-blue-50 text-[#1565c0] border border-blue-100' : 'bg-slate-100 text-slate-500'">
-                    {{ getMeetPosttests(meet).length > 0 ? `${getMeetPosttests(meet).length} Tes` : 'Tidak Ada' }}
-                  </span>
+                  <div class="flex items-center gap-2">
+                    <span
+                      v-if="isActivityDone(meet, 'posttest')"
+                      class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs"
+                    >
+                      <span>✓</span>
+                      <span>Sudah Dikerjakan</span>
+                    </span>
+                    <span
+                      v-else-if="getMeetPosttests(meet).length > 0"
+                      class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full"
+                    >
+                      Tersedia
+                    </span>
+                  </div>
                 </div>
 
                 <!-- Default text jika belum ada posttest -->
@@ -1084,10 +1280,16 @@ onMounted(() => {
                   <div
                     v-for="post in getMeetPosttests(meet)"
                     :key="post.id"
-                    class="bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    class="p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+                    :class="isQuizCompleted(post) ? 'border-2 border-emerald-500 ring-1 ring-emerald-200/60 bg-emerald-50/25' : 'bg-slate-50/70 border-slate-200/80'"
                   >
                     <div>
-                      <div class="font-bold text-slate-800 text-xs">{{ post.title }}</div>
+                      <div class="font-bold text-slate-800 text-xs flex items-center gap-2">
+                        <span>{{ post.title }}</span>
+                        <span v-if="isQuizCompleted(post)" class="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          ✓ Selesai
+                        </span>
+                      </div>
                       <div class="text-[11px] text-slate-500 font-medium mt-0.5">
                         {{ post.questions_count || 10 }} Soal • Durasi {{ post.duration_minutes || 20 }} Menit • {{ getTimeWindowStatus(post).info }}
                       </div>
@@ -1095,11 +1297,12 @@ onMounted(() => {
 
                     <div class="flex items-center gap-2">
                       <NuxtLink
-                        v-if="getQuizSubmission(post)"
+                        v-if="isQuizCompleted(post)"
                         :to="`/student/quizzes/${post.id}/onboarding`"
-                        class="text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition"
+                        class="text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition shadow-2xs flex items-center gap-1"
                       >
-                        ✓ Selesai (Nilai: {{ getQuizSubmission(post).score !== null ? getQuizSubmission(post).score : 'Terekam' }})
+                        <span>✓ Nilai: {{ getQuizSubmission(post)?.score !== null ? getQuizSubmission(post)?.score : 'Terekam' }}</span>
+                        <span class="text-[11px] underline ml-1">Detail</span>
                       </NuxtLink>
                       <NuxtLink
                         v-else-if="getTimeWindowStatus(post).isOpen"

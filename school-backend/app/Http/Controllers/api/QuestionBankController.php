@@ -166,6 +166,8 @@ class QuestionBankController extends Controller
         $validated = $request->validate([
             'type'           => 'required|in:' . implode(',', \App\Services\QuestionScorer::TYPES),
             'question'       => 'required|string',
+            'image_url'      => 'nullable|string|max:500',
+            'image_meta'     => 'nullable|array',
             'options'        => 'nullable|array',
             'data'           => 'nullable|array',
             'correct_answer' => 'nullable|string',

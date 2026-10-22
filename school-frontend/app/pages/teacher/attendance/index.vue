@@ -64,6 +64,20 @@ const selectedCourse = computed(() => {
   return courses.value.find(c => c.id === selectedCourseId.value) || null
 })
 
+// Grouped Courses by Subject (Anti Cognitive Overload for Multi-Subject Teachers)
+const groupedCoursesBySubject = computed(() => {
+  const groups: Record<string, any[]> = {}
+  courses.value.forEach(c => {
+    const sName = subjectName(c)
+    if (!groups[sName]) groups[sName] = []
+    groups[sName].push(c)
+  })
+  return Object.keys(groups).map(name => ({
+    name,
+    courses: groups[name]
+  }))
+})
+
 // Indo Date Formatting Helper
 const formatIndoDate = (dateStr: string) => {
   if (!dateStr) return '-'
@@ -482,9 +496,22 @@ watch(selectedCourseId, (newId) => {
             v-model="selectedCourseId"
             class="w-full sm:max-w-md px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
           >
-            <option v-for="c in courses" :key="c.id" :value="c.id">
-              {{ subjectName(c) }} &bull; {{ className(c) }} ({{ c.class?.capacity || c.class?.students_count || 36 }} Siswa)
-            </option>
+            <template v-if="groupedCoursesBySubject.length > 1">
+              <optgroup
+                v-for="grp in groupedCoursesBySubject"
+                :key="grp.name"
+                :label="`Mapel: ${grp.name}`"
+              >
+                <option v-for="c in grp.courses" :key="c.id" :value="c.id">
+                  {{ className(c) }} ({{ c.class?.capacity || c.class?.students_count || 36 }} Siswa)
+                </option>
+              </optgroup>
+            </template>
+            <template v-else>
+              <option v-for="c in courses" :key="c.id" :value="c.id">
+                {{ subjectName(c) }} &bull; {{ className(c) }} ({{ c.class?.capacity || c.class?.students_count || 36 }} Siswa)
+              </option>
+            </template>
           </select>
         </div>
 

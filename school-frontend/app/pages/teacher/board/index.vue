@@ -19,18 +19,18 @@ const drawCanvasRef = ref<HTMLCanvasElement | null>(null)
 // Tools state
 type ToolType = 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'text'
 const currentTool = ref<ToolType>('pen')
-const currentColor = ref('#059669') // Emerald MAN 11 default
+const currentColor = ref('#1b522d') // Hijau MAN 11 default
 const currentSize = ref(4)
 const currentBg = ref<'white' | 'grid' | 'lines' | 'chalkboard'>('white')
 
 // Preset Colors
 const colorPalette = [
-  { name: 'Emerald MAN 11', hex: '#059669' },
+  { name: 'Hijau MAN 11', hex: '#1b522d' },
+  { name: 'Hijau Segar', hex: '#3ba560' },
   { name: 'Charcoal Black', hex: '#1e293b' },
-  { name: 'Madrasah Blue', hex: '#2563eb' },
+  { name: 'Madrasah Blue', hex: '#0284c7' },
   { name: 'Crimson Red', hex: '#e11d48' },
   { name: 'Amber Gold', hex: '#d97706' },
-  { name: 'Purple Violet', hex: '#7c3aed' },
   { name: 'Chalk White', hex: '#f8fafc' },
 ]
 

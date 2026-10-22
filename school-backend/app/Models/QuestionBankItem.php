@@ -13,6 +13,8 @@ class QuestionBankItem extends Model
         'question_bank_id',
         'type',
         'question',
+        'image_url',
+        'image_meta',
         'options',
         'data',
         'correct_answer',
@@ -24,6 +26,7 @@ class QuestionBankItem extends Model
     protected $casts = [
         'options' => 'array',
         'data' => 'array',
+        'image_meta' => 'array',
         'weight' => 'decimal:2',
     ];
 

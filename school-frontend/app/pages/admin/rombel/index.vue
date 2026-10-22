@@ -1,5 +1,9 @@
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
+import AppDataTable from '~/components/ui/AppDataTable.vue'
+import AppModal from '~/components/ui/AppModal.vue'
+import AppButton from '~/components/ui/AppButton.vue'
+import AppBadge from '~/components/ui/AppBadge.vue'
 
 definePageMeta({
   layout: 'admin'
@@ -18,10 +22,18 @@ const pagination = ref({ current_page: 1, last_page: 1, total: 0 })
 const search = ref('')
 const selectedSemester = ref('')
 const loading = ref(false)
+const actionLoading = ref(false)
 
 const showModal = ref(false)
 const isEditing = ref(false)
 const currentId = ref(null)
+
+// Delete confirmation modal state
+const showDeleteModal = ref(false)
+const deleteTargetItem = ref(null)
+
+// User feedback message
+const feedbackMessage = ref({ text: '', type: '' })
 
 const form = reactive({
   semester_id: '',
@@ -32,6 +44,22 @@ const form = reactive({
 })
 
 const errors = ref({})
+
+const tableColumns = [
+  { key: 'class_name', label: 'Nama Kelas' },
+  { key: 'semester', label: 'Tahun Ajaran / Semester' },
+  { key: 'homeroom_teacher', label: 'Wali Kelas' },
+  { key: 'room_number', label: 'Ruangan' },
+  { key: 'students_count', label: 'Siswa Terdaftar' },
+  { key: 'actions', label: 'Aksi', align: 'right' },
+]
+
+const showFeedback = (text, type = 'success') => {
+  feedbackMessage.value = { text, type }
+  setTimeout(() => {
+    feedbackMessage.value = { text: '', type: '' }
+  }, 4000)
+}
 
 const fetchOptions = async () => {
   try {
@@ -126,7 +154,7 @@ const openEditModal = (item) => {
 
 const handleSubmit = async () => {
   errors.value = {}
-  loading.value = true
+  actionLoading.value = true
 
   const endpoint = isEditing.value
     ? `${apiBase}/rombel/${currentId.value}`
@@ -144,72 +172,108 @@ const handleSubmit = async () => {
     })
 
     showModal.value = false
+    showFeedback(isEditing.value ? 'Rombel berhasil diperbarui.' : 'Rombel baru berhasil dibuat.', 'success')
     fetchRombel(pagination.value.current_page)
   } catch (err) {
     if (err.data && err.data.errors) {
       errors.value = err.data.errors
     } else {
-      alert(err.data?.message || 'Terjadi kesalahan saat menyimpan data.')
+      showFeedback(err.data?.message || 'Terjadi kesalahan saat menyimpan data.', 'error')
     }
   } finally {
-    loading.value = false
+    actionLoading.value = false
   }
 }
 
-const handleDelete = async (id) => {
-  if (!confirm('Apakah Anda yakin ingin menghapus Rombel ini?')) return
+const promptDelete = (item) => {
+  deleteTargetItem.value = item
+  showDeleteModal.value = true
+}
+
+const executeDelete = async () => {
+  if (!deleteTargetItem.value) return
+  actionLoading.value = true
 
   try {
-    await $fetch(`${apiBase}/rombel/${id}`, {
+    await $fetch(`${apiBase}/rombel/${deleteTargetItem.value.id}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${token.value}`
       }
     })
+    showDeleteModal.value = false
+    deleteTargetItem.value = null
+    showFeedback('Rombel berhasil dihapus.', 'success')
     fetchRombel(pagination.value.current_page)
   } catch (err) {
-    alert(err.data?.message || 'Gagal menghapus Rombel')
+    showFeedback(err.data?.message || 'Gagal menghapus Rombel.', 'error')
+  } finally {
+    actionLoading.value = false
   }
 }
 </script>
 
 <template>
   <div class="space-y-6">
+    <!-- Feedback Notification Banner -->
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="opacity-0 -translate-y-2"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div
+        v-if="feedbackMessage.text"
+        :class="[
+          'p-4 rounded-2xl text-xs font-bold flex items-center justify-between border shadow-xs',
+          feedbackMessage.type === 'error'
+            ? 'bg-rose-50 border-rose-200 text-rose-800'
+            : 'bg-brand-50 border-brand-200 text-brand-900'
+        ]"
+      >
+        <span>{{ feedbackMessage.text }}</span>
+        <button @click="feedbackMessage.text = ''" class="text-slate-400 hover:text-slate-600 font-normal ml-3">✕</button>
+      </div>
+    </Transition>
+
     <!-- Header -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">Manajemen Rombel (Penetapan Kelas)</h1>
-        <p class="text-sm text-gray-500">Kelola Rombongan Belajar, Wali Kelas, dan Kuota Siswa per Semester</p>
+        <h1 class="text-2xl font-black text-slate-900 tracking-tight">Manajemen Rombel (Penetapan Kelas)</h1>
+        <p class="text-xs text-slate-500 mt-1">Kelola Rombongan Belajar, Wali Kelas, dan Kuota Siswa per Semester</p>
       </div>
-      <button 
+      <AppButton
         @click="openAddModal"
-        class="inline-flex items-center justify-center px-4 py-2.5 bg-emerald-600 text-white font-medium text-sm rounded-xl hover:bg-emerald-700 transition shadow-sm gap-2"
+        variant="primary"
+        class="gap-2"
       >
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
         </svg>
-        Buka Rombel Baru
-      </button>
+        <span>Buka Rombel Baru</span>
+      </AppButton>
     </div>
 
     <!-- Filter & Search Card -->
-    <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex flex-col md:flex-row gap-4 justify-between items-center">
+    <div class="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/90 flex flex-col md:flex-row gap-4 justify-between items-center">
       <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
         <div class="relative w-full sm:w-64">
           <input 
             v-model="search"
             type="text" 
             placeholder="Cari kelas/wali/ruangan..."
-            class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
+            class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600 transition"
           >
-          <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </div>
 
         <select 
           v-model="selectedSemester"
-          class="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+          class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600 text-slate-700"
         >
           <option value="">-- Semua Semester --</option>
           <option v-for="sem in semestersList" :key="sem.id" :value="sem.id">
@@ -218,205 +282,242 @@ const handleDelete = async (id) => {
         </select>
       </div>
 
-      <div class="text-xs text-gray-500">
-        Total: <span class="font-bold text-gray-700">{{ pagination.total }}</span> Rombel
+      <div class="text-xs text-slate-500">
+        Total: <span class="font-bold text-slate-800">{{ pagination.total }}</span> Rombel
       </div>
     </div>
 
-    <!-- Data Table -->
-    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              <th class="py-4 px-6">Nama Kelas</th>
-              <th class="py-4 px-6">Tahun Ajaran / Semester</th>
-              <th class="py-4 px-6">Wali Kelas</th>
-              <th class="py-4 px-6">Ruangan</th>
-              <th class="py-4 px-6">Siswa Terdaftar</th>
-              <th class="py-4 px-6 text-right">Aksi</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-100 text-sm text-gray-700">
-            <tr v-if="loading && rombelList.length === 0">
-              <td colspan="6" class="py-8 text-center text-gray-400">Memuat data rombel...</td>
-            </tr>
-            <tr v-else-if="rombelList.length === 0">
-              <td colspan="6" class="py-8 text-center text-gray-400">Tidak ada data rombel ditemukan.</td>
-            </tr>
-            <tr v-for="item in rombelList" :key="item.id" class="hover:bg-gray-50/50 transition">
-              <td class="py-4 px-6">
-                <NuxtLink :to="`/admin/rombel/${item.id}`" class="font-bold text-emerald-600 hover:underline">
-                  {{ item.class_name?.name || '-' }}
-                </NuxtLink>
-                <div class="text-xs text-gray-400">Tingkat {{ item.class_name?.grade_level || '-' }} ({{ item.class_name?.major || 'Umum' }})</div>
-              </td>
-              <td class="py-4 px-6 font-medium">
-                T.A {{ item.semester?.academic_year || '-' }}
-                <span class="inline-block ml-1 px-2 py-0.5 text-[10px] rounded-full" :class="item.semester?.semester_type === 'odd' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'">
-                  {{ item.semester?.semester_type === 'odd' ? 'Ganjil' : 'Genap' }}
-                </span>
-              </td>
-              <td class="py-4 px-6 text-gray-800">
-                {{ item.homeroom_teacher?.name || 'Belum diatur' }}
-              </td>
-              <td class="py-4 px-6 font-mono text-gray-600">
-                {{ item.room_number || '-' }}
-              </td>
-              <td class="py-4 px-6">
-                <span class="font-bold text-gray-900">{{ item.students_count || 0 }}</span>
-                <span class="text-gray-400"> / {{ item.capacity }} Siswa</span>
-              </td>
-              <td class="py-4 px-6 text-right space-x-2">
-                <NuxtLink 
-                  :to="`/admin/rombel/${item.id}`"
-                  class="px-3 py-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg text-xs font-semibold transition"
-                >
-                  Anggota Kelas
-                </NuxtLink>
-                <button 
-                  @click="openEditModal(item)"
-                  class="px-3 py-1.5 bg-amber-50 text-amber-600 hover:bg-amber-100 rounded-lg text-xs font-semibold transition"
-                >
-                  Edit
-                </button>
-                <button 
-                  @click="handleDelete(item.id)"
-                  class="px-3 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-xs font-semibold transition"
-                >
-                  Hapus
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <!-- Data Table Primitives -->
+    <AppDataTable
+      :columns="tableColumns"
+      :rows="rombelList"
+      :loading="loading"
+      empty-title="Belum ada data rombel"
+      empty-description="Silakan buat rombel baru atau sesuaikan filter pencarian semester."
+    >
+      <!-- Slot cell: class_name -->
+      <template #cell-class_name="{ row }">
+        <div>
+          <NuxtLink :to="`/admin/rombel/${row.id}`" class="font-bold text-brand-700 hover:underline">
+            {{ row.class_name?.name || '-' }}
+          </NuxtLink>
+          <div class="text-[11px] text-slate-400 mt-0.5">
+            Tingkat {{ row.class_name?.grade_level || '-' }} ({{ row.class_name?.major || 'Umum' }})
+          </div>
+        </div>
+      </template>
 
-      <!-- Pagination -->
-      <div class="p-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
-        <span>Halaman {{ pagination.current_page }} dari {{ pagination.last_page }}</span>
-        <div class="flex gap-2">
+      <!-- Slot cell: semester -->
+      <template #cell-semester="{ row }">
+        <div class="font-medium text-slate-800">
+          <span>T.A {{ row.semester?.academic_year || '-' }}</span>
+          <AppBadge
+            :variant="row.semester?.semester_type === 'odd' ? 'warning' : 'brand'"
+            size="xs"
+            class="ml-1.5"
+          >
+            {{ row.semester?.semester_type === 'odd' ? 'Ganjil' : 'Genap' }}
+          </AppBadge>
+        </div>
+      </template>
+
+      <!-- Slot cell: homeroom_teacher -->
+      <template #cell-homeroom_teacher="{ row }">
+        <span class="text-slate-700 font-medium">
+          {{ row.homeroom_teacher?.name || 'Belum diatur' }}
+        </span>
+      </template>
+
+      <!-- Slot cell: room_number -->
+      <template #cell-room_number="{ row }">
+        <span class="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+          {{ row.room_number || '-' }}
+        </span>
+      </template>
+
+      <!-- Slot cell: students_count -->
+      <template #cell-students_count="{ row }">
+        <span class="font-bold text-slate-900">{{ row.students_count || 0 }}</span>
+        <span class="text-slate-400"> / {{ row.capacity }} Siswa</span>
+      </template>
+
+      <!-- Slot cell: actions -->
+      <template #cell-actions="{ row }">
+        <div class="flex items-center justify-end gap-1.5">
+          <NuxtLink 
+            :to="`/admin/rombel/${row.id}`"
+            class="px-2.5 py-1.5 bg-brand-50 text-brand-800 hover:bg-brand-100 rounded-lg text-xs font-semibold transition"
+          >
+            Anggota
+          </NuxtLink>
           <button 
+            type="button"
+            @click="openEditModal(row)"
+            class="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg text-xs font-semibold transition cursor-pointer"
+          >
+            Edit
+          </button>
+          <button 
+            type="button"
+            @click="promptDelete(row)"
+            class="px-2.5 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg text-xs font-semibold transition cursor-pointer"
+          >
+            Hapus
+          </button>
+        </div>
+      </template>
+
+      <!-- Slot Footer: Pagination -->
+      <template #footer>
+        <span class="text-xs text-slate-500">
+          Halaman {{ pagination.current_page }} dari {{ pagination.last_page }}
+        </span>
+        <div class="flex gap-2">
+          <AppButton
+            variant="outline"
+            size="xs"
             :disabled="pagination.current_page <= 1"
             @click="fetchRombel(pagination.current_page - 1)"
-            class="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition"
           >
             Sebelumnya
-          </button>
-          <button 
+          </AppButton>
+          <AppButton
+            variant="outline"
+            size="xs"
             :disabled="pagination.current_page >= pagination.last_page"
             @click="fetchRombel(pagination.current_page + 1)"
-            class="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition"
           >
             Selanjutnya
-          </button>
+          </AppButton>
         </div>
-      </div>
-    </div>
+      </template>
+    </AppDataTable>
 
-    <!-- Modal Form -->
-    <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-gray-100 space-y-4">
-        <div class="flex justify-between items-center border-b border-gray-100 pb-3">
-          <h3 class="text-lg font-bold text-gray-900">
-            {{ isEditing ? 'Edit Rombel' : 'Buka Rombel Baru' }}
-          </h3>
-          <button @click="showModal = false" class="text-gray-400 hover:text-gray-600">
-            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+    <!-- Modal Form Tambah / Edit Rombel -->
+    <AppModal
+      v-model="showModal"
+      :title="isEditing ? 'Edit Rombel' : 'Buka Rombel Baru'"
+      :description="isEditing ? 'Perbarui data penetapan kelas rombel.' : 'Tentukan kelas, semester, dan wali kelas rombel baru.'"
+      max-width="md"
+    >
+      <form @submit.prevent="handleSubmit" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Tahun Ajaran / Semester *</label>
+          <select 
+            v-model="form.semester_id"
+            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600"
+            required
+          >
+            <option value="">-- Pilih Semester --</option>
+            <option v-for="sem in semestersList" :key="sem.id" :value="sem.id">
+              T.A {{ sem.academic_year }} ({{ sem.semester_type === 'odd' ? 'Ganjil' : 'Genap' }})
+            </option>
+          </select>
+          <p v-if="errors.semester_id" class="text-xs text-rose-600 mt-1">{{ errors.semester_id[0] }}</p>
         </div>
 
-        <form @submit.prevent="handleSubmit" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Master Kelas *</label>
+          <select 
+            v-model="form.class_name_id"
+            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600"
+            required
+          >
+            <option value="">-- Pilih Master Kelas --</option>
+            <option v-for="cls in classNamesList" :key="cls.id" :value="cls.id">
+              {{ cls.name }} (Tingkat {{ cls.grade_level }})
+            </option>
+          </select>
+          <p v-if="errors.class_name_id" class="text-xs text-rose-600 mt-1">{{ errors.class_name_id[0] }}</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Wali Kelas</label>
+          <select 
+            v-model="form.homeroom_teacher_id"
+            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600"
+          >
+            <option value="">-- Pilih Wali Kelas (Opsional) --</option>
+            <option v-for="tch in teachersList" :key="tch.id" :value="tch.id">
+              {{ tch.name }} (NIP: {{ tch.nip }})
+            </option>
+          </select>
+          <p v-if="errors.homeroom_teacher_id" class="text-xs text-rose-600 mt-1">{{ errors.homeroom_teacher_id[0] }}</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-semibold text-gray-700 mb-1">Tahun Ajaran / Semester *</label>
-            <select 
-              v-model="form.semester_id"
-              class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+            <label class="block text-xs font-bold text-slate-700 mb-1">Kapasitas Siswa *</label>
+            <input 
+              v-model.number="form.capacity"
+              type="number" 
+              min="1"
+              max="100"
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600"
               required
             >
-              <option value="">-- Pilih Semester --</option>
-              <option v-for="sem in semestersList" :key="sem.id" :value="sem.id">
-                T.A {{ sem.academic_year }} ({{ sem.semester_type === 'odd' ? 'Ganjil' : 'Genap' }})
-              </option>
-            </select>
-            <p v-if="errors.semester_id" class="text-xs text-rose-500 mt-1">{{ errors.semester_id[0] }}</p>
+            <p v-if="errors.capacity" class="text-xs text-rose-600 mt-1">{{ errors.capacity[0] }}</p>
           </div>
 
           <div>
-            <label class="block text-xs font-semibold text-gray-700 mb-1">Master Kelas *</label>
-            <select 
-              v-model="form.class_name_id"
-              class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-              required
+            <label class="block text-xs font-bold text-slate-700 mb-1">Nomor Ruangan</label>
+            <input 
+              v-model="form.room_number"
+              type="text" 
+              placeholder="Misal: R.101"
+              class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-600"
             >
-              <option value="">-- Pilih Master Kelas --</option>
-              <option v-for="cls in classNamesList" :key="cls.id" :value="cls.id">
-                {{ cls.name }} (Tingkat {{ cls.grade_level }})
-              </option>
-            </select>
-            <p v-if="errors.class_name_id" class="text-xs text-rose-500 mt-1">{{ errors.class_name_id[0] }}</p>
+            <p v-if="errors.room_number" class="text-xs text-rose-600 mt-1">{{ errors.room_number[0] }}</p>
           </div>
+        </div>
 
-          <div>
-            <label class="block text-xs font-semibold text-gray-700 mb-1">Wali Kelas</label>
-            <select 
-              v-model="form.homeroom_teacher_id"
-              class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-            >
-              <option value="">-- Pilih Wali Kelas (Opsional) --</option>
-              <option v-for="tch in teachersList" :key="tch.id" :value="tch.id">
-                {{ tch.name }} (NIP: {{ tch.nip }})
-              </option>
-            </select>
-            <p v-if="errors.homeroom_teacher_id" class="text-xs text-rose-500 mt-1">{{ errors.homeroom_teacher_id[0] }}</p>
-          </div>
+        <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+          <AppButton 
+            type="button" 
+            variant="outline"
+            @click="showModal = false"
+          >
+            Batal
+          </AppButton>
+          <AppButton 
+            type="submit" 
+            variant="primary"
+            :loading="actionLoading"
+          >
+            Simpan Rombel
+          </AppButton>
+        </div>
+      </form>
+    </AppModal>
 
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 mb-1">Kapasitas Siswa *</label>
-              <input 
-                v-model.number="form.capacity"
-                type="number" 
-                min="1"
-                max="100"
-                class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                required
-              >
-              <p v-if="errors.capacity" class="text-xs text-rose-500 mt-1">{{ errors.capacity[0] }}</p>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-gray-700 mb-1">Nomor Ruangan</label>
-              <input 
-                v-model="form.room_number"
-                type="text" 
-                placeholder="Misal: R.101"
-                class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-              >
-              <p v-if="errors.room_number" class="text-xs text-rose-500 mt-1">{{ errors.room_number[0] }}</p>
-            </div>
-          </div>
-
-          <div class="flex justify-end gap-3 pt-3 border-t border-gray-100">
-            <button 
-              type="button" 
-              @click="showModal = false"
-              class="px-4 py-2 border border-gray-200 text-gray-600 rounded-xl text-xs font-semibold hover:bg-gray-50 transition"
-            >
-              Batal
-            </button>
-            <button 
-              type="submit" 
-              :disabled="loading"
-              class="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 transition disabled:opacity-50"
-            >
-              {{ loading ? 'Menyimpan...' : 'Simpan' }}
-            </button>
-          </div>
-        </form>
+    <!-- Modal Konfirmasi Hapus Rombel (Menggantikan window.confirm) -->
+    <AppModal
+      v-model="showDeleteModal"
+      title="Hapus Rombongan Belajar?"
+      description="Tindakan ini tidak dapat dibatalkan. Pastikan kelas ini tidak memiliki data keterikatan aktif."
+      max-width="sm"
+    >
+      <div class="space-y-4">
+        <p class="text-xs text-slate-600">
+          Apakah Anda yakin ingin menghapus rombel 
+          <b class="text-slate-900">{{ deleteTargetItem?.class_name?.name || 'ini' }}</b>?
+        </p>
+        <div class="flex justify-end gap-2 pt-2">
+          <AppButton 
+            variant="outline" 
+            @click="showDeleteModal = false"
+          >
+            Batal
+          </AppButton>
+          <AppButton 
+            variant="danger" 
+            :loading="actionLoading"
+            @click="executeDelete"
+          >
+            Ya, Hapus
+          </AppButton>
+        </div>
       </div>
-    </div>
+    </AppModal>
   </div>
 </template>

@@ -3,6 +3,7 @@ import { computed, ref, reactive, onMounted, watch } from 'vue'
 import SlideOver from '~/components/ui/SlideOver.vue'
 import QuickTabs, { type TabItem } from '~/components/ui/QuickTabs.vue'
 import QuickAttendanceGrid from '~/components/classroom/QuickAttendanceGrid.vue'
+import QuestionImageUploader from '~/components/quiz/QuestionImageUploader.vue'
 
 const props = defineProps<{
   courseId: number | string
@@ -81,6 +82,8 @@ export interface QuestionItemData {
   id?: string | number | null
   type: string
   question: string
+  image_url?: string | null
+  image_meta?: any
   weight: number
   explanation?: string
   options?: Array<{ key: string, text: string, is_correct?: boolean }>
@@ -185,6 +188,8 @@ const createBlankQuestion = (type = 'pg', number = 1): QuestionItemData => {
     number,
     type,
     question: '',
+    image_url: null,
+    image_meta: null,
     weight: 10,
     explanation: '',
     options: [
@@ -2559,6 +2564,13 @@ watch(() => props.courseId, () => {
                     required
                     class="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
                   />
+                  <!-- Lampiran Gambar Butir Soal (WebP Kompresi & Clipboard Ctrl+V) -->
+                  <div class="mt-2">
+                    <QuestionImageUploader
+                      v-model="q.image_url"
+                      v-model:image-meta="q.image_meta"
+                    />
+                  </div>
                 </div>
 
                 <!-- TIPE 1: PILIHAN GANDA (1 Kunci) -->
@@ -3190,6 +3202,13 @@ watch(() => props.courseId, () => {
                   placeholder="Tuliskan teks pertanyaan soal..."
                   class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium focus:ring-1 focus:ring-indigo-500 focus:outline-none"
                 />
+                <!-- Lampiran Gambar Butir Soal (WebP Kompresi & Clipboard Ctrl+V) -->
+                <div class="mt-2">
+                  <QuestionImageUploader
+                    v-model="q.image_url"
+                    v-model:image-meta="q.image_meta"
+                  />
+                </div>
               </div>
 
               <!-- TIPE 1: PILIHAN GANDA (1 KUNCI) -->

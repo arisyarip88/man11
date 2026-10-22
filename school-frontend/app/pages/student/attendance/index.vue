@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import QrScannerModal from '~/components/ui/QrScannerModal.vue'
 
 definePageMeta({ layout: 'student', middleware: 'auth' })
 
@@ -43,21 +42,6 @@ const summaryData = ref<AttendanceSummaryData | null>(null)
 const search = ref('')
 const filterStatus = ref('all') // 'all', 'H', 'S', 'I', 'A'
 
-// Sesi KBM Hari Ini & Presensi Mandiri / QR
-const activeKbmData = ref<any>(null)
-const todaySessions = computed(() => activeKbmData.value?.today_sessions || [])
-const activeOpenSession = computed(() => activeKbmData.value?.active_open_session || null)
-const checkingInSessionId = ref<number | null>(null)
-const sessionSuccessMsg = ref('')
-
-const showQrModal = ref(false)
-const selectedQrSession = ref<any>(null)
-const qrSubmitting = ref(false)
-const qrErrorMsg = ref('')
-
-const subjectName = (course: any) => course?.subject?.name || 'Mata Pelajaran'
-const className = (course: any) => course?.class?.className?.name || course?.class?.class_name?.name || course?.class?.name || 'Kelas'
-
 const api = async <T>(path: string) => {
   return await $fetch<T>(`${apiBase}${path}`, {
     headers: {
@@ -70,77 +54,15 @@ const api = async <T>(path: string) => {
 const fetchAttendanceSummary = async () => {
   loading.value = true
   try {
-    const [summaryRes, kbmRes] = await Promise.all([
-      api<any>('/student/attendance-summary').catch(() => null),
-      api<any>('/kbm-sessions/active').catch(() => null)
-    ])
+    const summaryRes = await api<any>('/student/attendance-summary').catch(() => null)
     if (summaryRes?.data) {
       summaryData.value = summaryRes.data
-    }
-    if (kbmRes?.data) {
-      activeKbmData.value = kbmRes.data
     }
   } catch (err) {
     console.error('Gagal mengambil rekap presensi siswa:', err)
   } finally {
     loading.value = false
   }
-}
-
-const doSessionCheckIn = async (sessionId: number, method: 'self_click' | 'qr_scan' = 'self_click', customPayload: any = {}) => {
-  checkingInSessionId.value = sessionId
-  sessionSuccessMsg.value = ''
-  qrErrorMsg.value = ''
-
-  try {
-    const body: any = {
-      method,
-      status: 'H',
-      notes: method === 'self_click' ? 'Presensi Mandiri Siswa' : 'Presensi Scan QR Proyektor',
-      ...customPayload
-    }
-
-    const res: any = await $fetch<any>(`${apiBase}/kbm-sessions/${sessionId}/check-in`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token.value}`, Accept: 'application/json' },
-      body
-    })
-
-    sessionSuccessMsg.value = res?.message || 'Presensi berhasil dicatat! Status: Hadir.'
-    if (showQrModal.value) {
-      showQrModal.value = false
-    }
-
-    // Refresh both active sessions and summary
-    await fetchAttendanceSummary()
-
-    setTimeout(() => {
-      sessionSuccessMsg.value = ''
-    }, 6000)
-  } catch (err: any) {
-    const msg = err?.data?.message || err?.message || 'Gagal melakukan presensi.'
-    if (method === 'qr_scan') {
-      qrErrorMsg.value = msg
-    } else {
-      alert(msg)
-    }
-  } finally {
-    checkingInSessionId.value = null
-    qrSubmitting.value = false
-  }
-}
-
-const openQrModal = (session: any) => {
-  selectedQrSession.value = session
-  qrErrorMsg.value = ''
-  showQrModal.value = true
-}
-
-const submitQrPayload = async (payload: { qr_token: string, time_slot?: number }) => {
-  if (!selectedQrSession.value) return
-  qrSubmitting.value = true
-  qrErrorMsg.value = ''
-  await doSessionCheckIn(selectedQrSession.value.id, 'qr_scan', payload)
 }
 
 const records = computed(() => summaryData.value?.records || [])
@@ -204,119 +126,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Success Message Notification -->
-    <div v-if="sessionSuccessMsg" class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl flex items-center justify-between shadow-xs">
-      <div class="flex items-center gap-3">
-        <span class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">✓</span>
-        <span class="text-xs font-bold">{{ sessionSuccessMsg }}</span>
-      </div>
-      <button type="button" @click="sessionSuccessMsg = ''" class="text-emerald-700 hover:text-emerald-900 text-xs font-bold">✕</button>
-    </div>
-
-    <!-- Sesi KBM Hari Ini & Presensi (Scan QR / 1-Klik) -->
-    <div v-if="todaySessions.length > 0" class="space-y-3">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <h2 class="text-sm font-extrabold text-slate-800 uppercase tracking-wider">
-            Sesi KBM & Presensi Hari Ini
-          </h2>
-        </div>
-        <span class="text-xs text-slate-500 font-medium">
-          {{ todaySessions.length }} Jadwal KBM Aktif
-        </span>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div
-          v-for="s in todaySessions"
-          :key="s.id"
-          class="bg-white rounded-2xl border p-5 transition flex flex-col justify-between shadow-xs"
-          :class="s.status === 'open' ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'"
-        >
-          <div class="space-y-3">
-            <div class="flex items-center justify-between gap-2">
-              <span
-                class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider"
-                :class="s.status === 'open' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'"
-              >
-                {{ s.status === 'open' ? '● KBM Sedang Berlangsung' : 'Selesai / Terjadwal' }}
-              </span>
-
-              <!-- Status Presensi Badge -->
-              <span
-                v-if="s.my_attendance"
-                class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1"
-              >
-                <span>✓</span>
-                <span>Sudah Presensi ({{ s.my_attendance.status_label || 'Hadir' }})</span>
-              </span>
-              <span
-                v-else
-                class="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200"
-              >
-                Belum Presensi
-              </span>
-            </div>
-
-            <div>
-              <h3 class="font-extrabold text-slate-900 text-sm">
-                {{ subjectName(s.course) }}
-              </h3>
-              <p class="text-xs text-slate-500 font-medium mt-0.5">
-                {{ s.teacher?.name || 'Guru Pengampu' }} • Kelas {{ className(s.course) }}
-              </p>
-              <div v-if="s.active_meet" class="mt-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
-                <span class="text-slate-400 font-semibold block text-[10px]">Materi / Sub-bab Pertemuan:</span>
-                <span class="font-bold text-slate-800 block truncate">
-                  Pertemuan {{ s.active_meet.meeting_number }}: {{ s.active_meet.title }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Action buttons -->
-          <div class="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-            <NuxtLink
-              v-if="s.active_meet_id"
-              :to="`/elearning/meets/${s.active_meet_id}`"
-              class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-            >
-              <span>Buka Materi Pembelajaran</span>
-              <span>➔</span>
-            </NuxtLink>
-            <div v-else></div>
-
-            <div class="flex items-center gap-2">
-              <!-- 1-Klik Checkin jika diizinkan dan belum presensi -->
-              <button
-                v-if="s.status === 'open' && !s.my_attendance && s.allow_self_checkin"
-                type="button"
-                :disabled="checkingInSessionId === s.id"
-                @click="doSessionCheckIn(s.id, 'self_click')"
-                class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1"
-              >
-                <span v-if="checkingInSessionId === s.id" class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                <span>1-Klik Hadir</span>
-              </button>
-
-              <!-- Tombol Scan QR Proyektor -->
-              <button
-                v-if="s.status === 'open' && !s.my_attendance"
-                type="button"
-                @click="openQrModal(s)"
-                class="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                </svg>
-                <span>Scan QR</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Loading State -->
     <div v-if="loading" class="grid grid-cols-1 md:grid-cols-5 gap-4 animate-pulse">
@@ -485,14 +294,5 @@ onMounted(() => {
         </div>
       </div>
     </template>
-    <!-- Modal Scanner QR Presensi -->
-    <QrScannerModal
-      v-model="showQrModal"
-      :session="selectedQrSession"
-      :loading="qrSubmitting"
-      :error-message="qrErrorMsg"
-      @submit="submitQrPayload"
-      @close="showQrModal = false"
-    />
   </div>
 </template>

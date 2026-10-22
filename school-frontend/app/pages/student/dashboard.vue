@@ -4,7 +4,6 @@ import AppButton from '~/components/ui/AppButton.vue'
 import AppBadge from '~/components/ui/AppBadge.vue'
 import AppSkeleton from '~/components/ui/AppSkeleton.vue'
 import AppEmptyState from '~/components/ui/AppEmptyState.vue'
-import QrScannerModal from '~/components/ui/QrScannerModal.vue'
 
 definePageMeta({ layout: 'student', middleware: 'auth' })
 
@@ -24,21 +23,6 @@ const submissions = ref<any[]>([])
 const tasks = ref<any[]>([])
 const semesters = ref<any[]>([])
 
-// -------------------------------------------------------------------
-// Sesi KBM Harian (Decoupled Daily KBM Sessions)
-// -------------------------------------------------------------------
-const activeKbmData = ref<any>(null)
-const todaySessions = computed(() => activeKbmData.value?.today_sessions || [])
-const activeOpenSession = computed(() => activeKbmData.value?.active_open_session || null)
-const checkingInSessionId = ref<number | null>(null)
-const sessionSuccessMsg = ref('')
-
-// Modal Presensi QR untuk Siswa
-const showQrModal = ref(false)
-const selectedQrSession = ref<any>(null)
-const qrInputToken = ref('')
-const qrSubmitting = ref(false)
-const qrErrorMsg = ref('')
 
 // Filter & Search states
 const sidebarSearch = ref('')
@@ -62,12 +46,12 @@ const toggleCourseDropdown = (courseId: number) => {
 }
 
 const defaultActivityMenuItems = [
-  { key: 'pretest', number: 1, label: 'Pretest' },
-  { key: 'material', number: 2, label: 'Modul & Bahan Ajar' },
-  { key: 'discussion', number: 3, label: 'Ruang Diskusi' },
-  { key: 'quiz', number: 4, label: 'Kuis Formatif' },
-  { key: 'assignment', number: 5, label: 'Tugas Mandiri' },
-  { key: 'posttest', number: 6, label: 'Posttest' },
+  { key: 'pretest', label: 'Pretest' },
+  { key: 'material', label: 'Modul & Bahan Ajar' },
+  { key: 'discussion', label: 'Ruang Diskusi' },
+  { key: 'quiz', label: 'Kuis Formatif' },
+  { key: 'assignment', label: 'Tugas Mandiri' },
+  { key: 'posttest', label: 'Posttest' },
 ]
 
 const navigateToCourseActivity = (course: any, activityKey: string) => {
@@ -174,19 +158,17 @@ const paginatedCourses = computed(() => {
 const fetchAllDashboardData = async () => {
   loading.value = true
   try {
-    const [scheduleRes, courseRes, submissionRes, semesterRes, kbmRes] = await Promise.all([
+    const [scheduleRes, courseRes, submissionRes, semesterRes] = await Promise.all([
       api<any>('/schedules?my_schedules=true&all=true&with_current_meet=true'),
       api<any>('/courses?my_courses=true&all=true&with_meets=true'),
       api<any>('/submissions?my_submissions=true'),
-      api<any>('/semesters').catch(() => null),
-      api<any>('/kbm-sessions/active').catch(() => null)
+      api<any>('/semesters').catch(() => null)
     ])
 
     schedules.value = list(scheduleRes)
     courses.value = list(courseRes)
     submissions.value = list(submissionRes)
     semesters.value = list(semesterRes)
-    activeKbmData.value = kbmRes?.data || null
 
     // Extract all quizzes
     const allQuizzes: any[] = []
@@ -212,85 +194,9 @@ const fetchAllDashboardData = async () => {
   }
 }
 
-// Refresh active KBM sessions
-const refreshActiveKbmSessions = async () => {
-  try {
-    const res: any = await api('/kbm-sessions/active')
-    activeKbmData.value = res?.data || null
-  } catch (e) {
-    console.error('Gagal merefresh sesi KBM aktif:', e)
-  }
-}
-
 onMounted(() => {
   fetchAllDashboardData()
 })
-
-// -------------------------------------------------------------------
-// Presensi KBM Harian Siswa (Self Check-in & QR)
-// -------------------------------------------------------------------
-const doSessionCheckIn = async (sessionId: number, method: 'self_click' | 'qr_scan' = 'self_click', customPayload: any = {}) => {
-  checkingInSessionId.value = sessionId
-  sessionSuccessMsg.value = ''
-  qrErrorMsg.value = ''
-
-  try {
-    const body: any = {
-      method,
-      status: 'H',
-      notes: method === 'self_click' ? 'Presensi Mandiri Siswa' : 'Presensi Scan QR Proyektor',
-      ...customPayload
-    }
-
-    const res: any = await $fetch<any>(`${apiBase}/kbm-sessions/${sessionId}/check-in`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token.value}`, Accept: 'application/json' },
-      body
-    })
-
-    sessionSuccessMsg.value = res?.message || 'Presensi berhasil dicatat! Status: Hadir.'
-    if (showQrModal.value) {
-      showQrModal.value = false
-    }
-
-    await refreshActiveKbmSessions()
-
-    setTimeout(() => {
-      sessionSuccessMsg.value = ''
-    }, 6000)
-  } catch (err: any) {
-    const msg = err?.data?.message || err?.message || 'Gagal melakukan presensi.'
-    if (method === 'qr_scan') {
-      qrErrorMsg.value = msg
-    } else {
-      alert(msg)
-    }
-  } finally {
-    checkingInSessionId.value = null
-    qrSubmitting.value = false
-  }
-}
-
-const openQrModal = (session: any) => {
-  selectedQrSession.value = session
-  qrInputToken.value = ''
-  qrErrorMsg.value = ''
-  showQrModal.value = true
-}
-
-const submitQrPayload = async (payload: { qr_token: string, time_slot?: number }) => {
-  if (!selectedQrSession.value) return
-  qrSubmitting.value = true
-  qrErrorMsg.value = ''
-  await doSessionCheckIn(selectedQrSession.value.id, 'qr_scan', payload)
-}
-
-// Buka ruang belajar LMS langsung dari sesi KBM hari ini
-const openDrawerFromKbmSession = (session: any) => {
-  if (!session?.course) return
-  const meetNum = session.active_meet?.meeting_number || 1
-  navigateTo(`/elearning/courses/${session.course.id}?meet=${meetNum}`)
-}
 </script>
 
 <template>
@@ -311,7 +217,7 @@ const openDrawerFromKbmSession = (session: any) => {
             v-model="sidebarSearch"
             type="text"
             placeholder="Pencarian"
-            class="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-[#1565c0] transition font-medium text-slate-800 placeholder-slate-400"
+            class="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-hidden focus:border-brand-700 transition font-medium text-slate-800 placeholder-slate-400"
           />
           <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -387,8 +293,31 @@ const openDrawerFromKbmSession = (session: any) => {
                 class="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs font-medium text-slate-700 hover:text-blue-700 hover:bg-white transition text-left group/act"
               >
                 <span class="flex items-center gap-2 truncate">
-                  <span class="w-4 h-4 rounded text-[10px] font-bold flex items-center justify-center shrink-0 bg-slate-200 text-slate-700 group-hover/act:bg-blue-100 group-hover/act:text-blue-800">
-                    {{ act.number }}
+                  <span class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 border border-slate-200 bg-slate-100 text-slate-500 group-hover/act:bg-blue-100 group-hover/act:text-blue-800 transition">
+                    <!-- Pretest -->
+                    <svg v-if="act.key === 'pretest'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <!-- Modul & Bahan Ajar -->
+                    <svg v-else-if="act.key === 'material'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <!-- Ruang Diskusi -->
+                    <svg v-else-if="act.key === 'discussion'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <!-- Kuis Formatif -->
+                    <svg v-else-if="act.key === 'quiz'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    <!-- Tugas Mandiri -->
+                    <svg v-else-if="act.key === 'assignment'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <!-- Posttest -->
+                    <svg v-else-if="act.key === 'posttest'" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
                   </span>
                   <span class="truncate">{{ act.label }}</span>
                 </span>
@@ -434,117 +363,6 @@ const openDrawerFromKbmSession = (session: any) => {
         </div>
       </div>
 
-      <!-- Live Sesi KBM Hari Ini & Presensi Mandiri / Scan QR -->
-      <div v-if="sessionSuccessMsg" class="p-4 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl flex items-center justify-between shadow-xs">
-        <div class="flex items-center gap-3">
-          <span class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">✓</span>
-          <span class="text-xs font-bold">{{ sessionSuccessMsg }}</span>
-        </div>
-        <button type="button" @click="sessionSuccessMsg = ''" class="text-emerald-700 hover:text-emerald-900 text-xs font-bold">✕</button>
-      </div>
-
-      <div v-if="todaySessions.length > 0" class="space-y-3">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <h2 class="text-sm font-extrabold text-slate-800 uppercase tracking-wider">
-              Sesi KBM & Presensi Hari Ini
-            </h2>
-          </div>
-          <span class="text-xs text-slate-500 font-medium">
-            {{ todaySessions.length }} Jadwal KBM
-          </span>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div
-            v-for="s in todaySessions"
-            :key="s.id"
-            class="bg-white rounded-2xl border p-5 transition flex flex-col justify-between shadow-xs"
-            :class="s.status === 'open' ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'"
-          >
-            <div class="space-y-3">
-              <div class="flex items-center justify-between gap-2">
-                <span
-                  class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider"
-                  :class="s.status === 'open' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'"
-                >
-                  {{ s.status === 'open' ? '● KBM Berlangsung' : 'Selesai / Terjadwal' }}
-                </span>
-
-                <!-- Status Presensi Badge -->
-                <span
-                  v-if="s.my_attendance"
-                  class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1"
-                >
-                  <span>✓</span>
-                  <span>Sudah Presensi ({{ s.my_attendance.status_label || 'Hadir' }})</span>
-                </span>
-                <span
-                  v-else
-                  class="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200"
-                >
-                  Belum Presensi
-                </span>
-              </div>
-
-              <div>
-                <h3 class="font-extrabold text-slate-900 text-sm">
-                  {{ subjectName(s.course) }}
-                </h3>
-                <p class="text-xs text-slate-500 font-medium mt-0.5">
-                  {{ s.teacher?.name || 'Guru Pengampu' }} • Kelas {{ className(s.course) }}
-                </p>
-                <div v-if="s.active_meet" class="mt-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
-                  <span class="text-slate-400 font-semibold block text-[10px]">Materi / Sub-bab Aktif:</span>
-                  <span class="font-bold text-slate-800 block truncate">
-                    Pertemuan {{ s.active_meet.meeting_number }}: {{ s.active_meet.title }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Action buttons -->
-            <div class="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-              <button
-                type="button"
-                @click="openDrawerFromKbmSession(s)"
-                class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-              >
-                <span>Buka Pembelajaran</span>
-                <span>➔</span>
-              </button>
-
-              <div class="flex items-center gap-2">
-                <!-- 1-Klik Checkin jika diizinkan dan belum presensi -->
-                <button
-                  v-if="s.status === 'open' && !s.my_attendance && s.allow_self_checkin"
-                  type="button"
-                  :disabled="checkingInSessionId === s.id"
-                  @click="doSessionCheckIn(s.id, 'self_click')"
-                  class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1"
-                >
-                  <span v-if="checkingInSessionId === s.id" class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  <span>1-Klik Hadir</span>
-                </button>
-
-                <!-- Tombol Scan QR Proyektor -->
-                <button
-                  v-if="s.status === 'open' && !s.my_attendance"
-                  type="button"
-                  @click="openQrModal(s)"
-                  class="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
-                >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                  </svg>
-                  <span>Scan QR</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- B. Search & Semester Filter Bar -->
       <div class="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -677,14 +495,5 @@ const openDrawerFromKbmSession = (session: any) => {
       </div>
     </div>
 
-    <!-- MODAL PRESENSI QR PROYEKTOR SISWA -->
-    <QrScannerModal
-      v-model="showQrModal"
-      :session="selectedQrSession"
-      :loading="qrSubmitting"
-      :error-message="qrErrorMsg"
-      @submit="submitQrPayload"
-      @close="showQrModal = false"
-    />
   </div>
 </template>
