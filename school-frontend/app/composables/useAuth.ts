@@ -2,7 +2,8 @@ export const useAuth = () => {
   const token = useCookie<string | null>('auth_token', { 
     maxAge: 60 * 60 * 24 * 7, // 7 Hari
     path: '/',
-    sameSite: 'lax'
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
   })
   
   const user = useState<any>('user', () => null)

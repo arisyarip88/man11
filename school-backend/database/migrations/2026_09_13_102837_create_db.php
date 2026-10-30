@@ -126,7 +126,7 @@ return new class extends Migration
         // 11. Quizzes (Kuis / Tugas Pertemuan)
         Schema::create('quizzes', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('meet_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('meet_id')->nullable()->constrained()->cascadeOnDelete();
             $table->string('title');
             $table->text('instructions')->nullable();
             $table->enum('quiz_type', ['assignment', 'multiple_choice', 'essay'])->default('assignment');
@@ -144,10 +144,10 @@ return new class extends Migration
             $table->foreignId('student_id')->constrained()->cascadeOnDelete();
             $table->text('submission_text')->nullable();
             $table->string('file_path')->nullable();
-            $table->dateTime('submitted_at');
+            $table->dateTime('submitted_at')->nullable();
             $table->decimal('score', 5, 2)->nullable();
             $table->text('teacher_feedback')->nullable();
-            $table->enum('status', ['submitted', 'graded', 'late'])->default('submitted');
+            $table->enum('status', ['in_progress', 'submitted', 'graded', 'late'])->default('in_progress');
             $table->timestamps();
 
             $table->unique(['quiz_id', 'student_id']);

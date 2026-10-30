@@ -3,7 +3,7 @@ export default defineNuxtRouteMiddleware(async (to, from) => {
 
   // 1. Cek keberadaan Token
   if (!token.value) {
-    if (to.path !== '/login' && to.path !== '/register') {
+    if (to.path !== '/login') {
       return navigateTo('/login')
     }
     return

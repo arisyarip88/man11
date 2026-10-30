@@ -33,6 +33,8 @@ const handleLogin = async () => {
     if (err.data?.error_code === 'exam_in_progress') {
       isExamInProgress.value = true
       errorMessage.value = err.data.message || 'Sesi ujian aktif Anda sedang berjalan di perangkat lain. Sistem membatasi 1 perangkat aktif saat ujian berlangsung.'
+    } else if (err.data?.error_code === 'too_many_attempts' || err.status === 429) {
+      errorMessage.value = err.data?.message || 'Terlalu banyak percobaan login gagal. Mohon tunggu 1 menit demi keamanan akun Anda.'
     } else if (err.data?.message) {
       errorMessage.value = err.data.message
     } else if (err.message && err.message.includes('Failed to fetch')) {
@@ -262,9 +264,9 @@ const handleLogin = async () => {
         <div class="mt-6 pt-6 border-t border-slate-200/80 text-center">
           <p class="text-xs text-slate-500">
             Belum memiliki akun terdaftar? 
-            <NuxtLink to="/register" class="font-bold text-brand-700 hover:underline ml-1">
-              Daftar sekarang
-            </NuxtLink>
+            <span class="block text-xs text-slate-600 mt-1 font-normal">Hubungi <strong class="text-slate-800">Admin Tata Usaha (TU)</strong> atau <strong class="text-slate-800">Wali Kelas</strong> untuk aktivasi akun resmi.</span>
+
+
           </p>
         </div>
 

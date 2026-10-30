@@ -11,25 +11,10 @@ class AuthController extends Controller
 {
     public function register(Request $request)
     {
-        $request->validate([
-            'username' => 'required|string|max:255|unique:users|alpha_dash',
-            'email'    => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8',
-        ]);
-
-        $user = User::create([
-            'username' => $request->username,
-            'email'    => $request->email,
-            'password' => Hash::make($request->password),
-            'role_id'  => 3, // Role default: User
-        ]);
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
         return response()->json([
-            'user'  => $user->load('role'),
-            'token' => $token
-        ], 201);
+            'message'    => 'Registrasi publik dinonaktifkan. Seluruh akun peserta didik dan tenaga pendidik dikelola terpusat oleh Administrator Madrasah.',
+            'error_code' => 'registration_disabled',
+        ], 403);
     }
 
     public function login(Request $request)

@@ -45,8 +45,34 @@ class User extends Authenticatable
         return $this->hasOne(Teacher::class, 'nip', 'username');
     }
 
-    public function isAdmin()
+    public function isAdmin(): bool
     {
-        return in_array(strtolower($this->role?->name ?? ''), ['admin', 'super_admin']);
+        return (int) $this->role_id === 1 || in_array(strtolower($this->role?->name ?? ''), ['admin', 'super_admin']);
+    }
+
+    public function isTeacher(): bool
+    {
+        return (int) $this->role_id === 2 || in_array(strtolower($this->role?->name ?? ''), ['teacher', 'guru']);
+    }
+
+    public function isStudent(): bool
+    {
+        return (int) $this->role_id === 3 || in_array(strtolower($this->role?->name ?? ''), ['student', 'siswa']);
+    }
+
+    public function hasRole(...$roles): bool
+    {
+        $roleName = strtolower($this->role?->name ?? '');
+        $roleId = (int) $this->role_id;
+
+        foreach ($roles as $role) {
+            $r = strtolower(trim((string) $role));
+            if ($r === 'admin' && ($roleId === 1 || in_array($roleName, ['admin', 'super_admin']))) return true;
+            if ($r === 'teacher' && ($roleId === 2 || in_array($roleName, ['teacher', 'guru']))) return true;
+            if ($r === 'student' && ($roleId === 3 || in_array($roleName, ['student', 'siswa']))) return true;
+            if ($roleName === $r) return true;
+        }
+
+        return false;
     }
 }

@@ -513,6 +513,22 @@ class CbtController extends Controller
             ->where('student_id', $student->id)
             ->firstOrFail();
 
+        // Keamanan Post-Submission: Jangan izinkan pengiriman ulang jika sudah berstatus selesai
+        if ($submission->submitted_at) {
+            return response()->json([
+                'success'    => false,
+                'message'    => 'Ujian telah selesai dikumpulkan sebelumnya, jawaban tidak dapat diubah lagi.',
+                'error_code' => 'already_submitted',
+                'data'       => [
+                    'score'           => $submission->score,
+                    'score_pg'        => $submission->score_pg,
+                    'is_graded'       => (bool) $submission->is_graded,
+                    'finished_reason' => $submission->finished_reason,
+                    'submitted_at'    => $submission->submitted_at,
+                ],
+            ], 422);
+        }
+
         $answers = $validated['answers'] ?? $submission->answers ?? [];
         $finalized = $this->gradeAndFinalizeSubmission($submission, $quiz, $answers, 'manual');
 

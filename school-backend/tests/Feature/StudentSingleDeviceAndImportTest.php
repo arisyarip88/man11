@@ -19,6 +19,8 @@ use Tests\TestCase;
 
 class StudentSingleDeviceAndImportTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -118,7 +120,7 @@ class StudentSingleDeviceAndImportTest extends TestCase
         // Buat quiz dummy dan submission yang belum disubmit (sedang berjalan)
         $meet = \App\Models\Meet::first();
         $quiz = Quiz::create([
-            'meet_id' => $meet ? $meet->id : 1,
+            'meet_id' => $meet?->id,
             'title' => 'Ujian Aktif Test',
             'token' => 'EXAM99',
             'duration' => 60,
